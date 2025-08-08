@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("kotlin-kapt")
 }
 
 android {
@@ -71,15 +72,19 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     
-    // Room (without Hilt for now)
-    // implementation(libs.androidx.room.runtime)
-    // implementation(libs.androidx.room.ktx)
+    // Room
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    kapt(libs.androidx.room.compiler)
     
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
     
     // Image Loading
     implementation(libs.coil.compose)
+    
+    // JSON
+    implementation(libs.gson)
     
     // Testing
     testImplementation(libs.junit)

@@ -20,7 +20,19 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object Library : Screen("library")
+    object Library : Screen("library/{groupId}") {
+        const val GROUP_ID_ARG = "groupId"
+        
+        val arguments = listOf(
+            navArgument(GROUP_ID_ARG) {
+                type = NavType.StringType
+            }
+        )
+        
+        fun createRoute(groupId: String): String {
+            return route.replace("{$GROUP_ID_ARG}", groupId)
+        }
+    }
     object Setlists : Screen("setlists")
     object Settings : Screen("settings")
     

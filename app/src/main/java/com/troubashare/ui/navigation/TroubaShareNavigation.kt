@@ -44,7 +44,7 @@ fun TroubaShareNavigation(
                     navController.navigate(Screen.Library.createRoute(groupId))
                 },
                 onNavigateToSetlists = {
-                    navController.navigate(Screen.Setlists.route)
+                    navController.navigate(Screen.Setlists.createRoute(groupId))
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
@@ -97,8 +97,13 @@ fun TroubaShareNavigation(
             )
         }
         
-        composable(Screen.Setlists.route) {
+        composable(
+            route = Screen.Setlists.route,
+            arguments = Screen.Setlists.arguments
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString(Screen.Setlists.GROUP_ID_ARG) ?: ""
             SetlistsScreen(
+                groupId = groupId,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

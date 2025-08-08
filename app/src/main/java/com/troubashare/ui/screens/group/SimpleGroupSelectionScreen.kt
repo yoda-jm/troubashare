@@ -241,10 +241,10 @@ fun CreateGroupDialog(
                     Text("Add Member")
                 }
                 
-                if (state.errorMessage != null) {
+                state.errorMessage?.let { errorMessage ->
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = state.errorMessage,
+                        text = errorMessage,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )

@@ -33,7 +33,19 @@ sealed class Screen(val route: String) {
             return route.replace("{$GROUP_ID_ARG}", groupId)
         }
     }
-    object Setlists : Screen("setlists")
+    object Setlists : Screen("setlists/{groupId}") {
+        const val GROUP_ID_ARG = "groupId"
+        
+        val arguments = listOf(
+            navArgument(GROUP_ID_ARG) {
+                type = NavType.StringType
+            }
+        )
+        
+        fun createRoute(groupId: String): String {
+            return route.replace("{$GROUP_ID_ARG}", groupId)
+        }
+    }
     object Settings : Screen("settings")
     
     object SongDetails : Screen("song_details/{groupId}/{songId}") {

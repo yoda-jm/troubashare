@@ -151,7 +151,7 @@ fun SongDetailScreen(
                 }
                 
                 // Error display
-                if (uiState.errorMessage != null) {
+                uiState.errorMessage?.let { errorMessage ->
                     item {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -159,7 +159,7 @@ fun SongDetailScreen(
                             )
                         ) {
                             Text(
-                                text = uiState.errorMessage,
+                                text = errorMessage,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.padding(16.dp)
                             )

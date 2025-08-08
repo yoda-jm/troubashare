@@ -36,7 +36,8 @@ fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val database = remember { TroubaShareDatabase.getInstance(context) }
-    val songRepository = remember { SongRepository(database) }
+    val fileManager = remember { com.troubashare.data.file.FileManager(context) }
+    val songRepository = remember { SongRepository(database, fileManager) }
     val groupRepository = remember { com.troubashare.data.repository.GroupRepository(database) }
     val viewModel: LibraryViewModel = viewModel { LibraryViewModel(songRepository, groupId) }
     

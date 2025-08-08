@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import com.troubashare.ui.screens.group.SimpleGroupSelectionScreen
 import com.troubashare.ui.screens.home.HomeScreen
 import com.troubashare.ui.screens.library.LibraryScreen
+import com.troubashare.ui.screens.song.SongDetailScreen
 import com.troubashare.ui.screens.setlist.SetlistsScreen
 import com.troubashare.ui.screens.settings.SettingsScreen
 
@@ -72,6 +73,24 @@ fun TroubaShareNavigation(
             val groupId = backStackEntry.arguments?.getString(Screen.Library.GROUP_ID_ARG) ?: ""
             LibraryScreen(
                 groupId = groupId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onSongClick = { songId ->
+                    navController.navigate(Screen.SongDetails.createRoute(groupId, songId))
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.SongDetails.route,
+            arguments = Screen.SongDetails.arguments
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString(Screen.SongDetails.GROUP_ID_ARG) ?: ""
+            val songId = backStackEntry.arguments?.getString(Screen.SongDetails.SONG_ID_ARG) ?: ""
+            SongDetailScreen(
+                groupId = groupId,
+                songId = songId,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

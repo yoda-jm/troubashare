@@ -36,18 +36,22 @@ sealed class Screen(val route: String) {
     object Setlists : Screen("setlists")
     object Settings : Screen("settings")
     
-    // Future screens to be added
-    object SongDetails : Screen("song_details/{songId}") {
+    object SongDetails : Screen("song_details/{groupId}/{songId}") {
+        const val GROUP_ID_ARG = "groupId"
         const val SONG_ID_ARG = "songId"
         
         val arguments = listOf(
+            navArgument(GROUP_ID_ARG) {
+                type = NavType.StringType
+            },
             navArgument(SONG_ID_ARG) {
                 type = NavType.StringType
             }
         )
         
-        fun createRoute(songId: String): String {
-            return route.replace("{$SONG_ID_ARG}", songId)
+        fun createRoute(groupId: String, songId: String): String {
+            return route.replace("{$GROUP_ID_ARG}", groupId)
+                       .replace("{$SONG_ID_ARG}", songId)
         }
     }
     

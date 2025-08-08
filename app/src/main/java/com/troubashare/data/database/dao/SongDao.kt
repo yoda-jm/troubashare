@@ -29,6 +29,9 @@ interface SongDao {
     @Query("SELECT * FROM song_files WHERE songId = :songId")
     suspend fun getFilesBySongId(songId: String): List<SongFileEntity>
     
+    @Query("SELECT COUNT(*) FROM song_files WHERE songId = :songId")
+    suspend fun getFileCountBySongId(songId: String): Int
+    
     @Query("SELECT * FROM song_files WHERE songId = :songId AND memberId = :memberId")
     suspend fun getFilesBySongAndMember(songId: String, memberId: String): List<SongFileEntity>
     

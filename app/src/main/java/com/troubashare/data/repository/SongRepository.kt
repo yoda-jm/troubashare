@@ -6,13 +6,18 @@ import com.troubashare.data.database.entities.SongFileEntity
 import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.SongFile
 import com.troubashare.domain.model.FileType
+import com.troubashare.data.file.FileManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.*
+import java.io.InputStream
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
-class SongRepository(private val database: TroubaShareDatabase) {
+class SongRepository(
+    private val database: TroubaShareDatabase,
+    private val fileManager: FileManager
+) {
     
     private val songDao = database.songDao()
     private val gson = Gson()
@@ -20,7 +25,8 @@ class SongRepository(private val database: TroubaShareDatabase) {
     fun getSongsByGroupId(groupId: String): Flow<List<Song>> {
         return songDao.getSongsByGroupId(groupId).map { entities ->
             entities.map { entity ->
-                entity.toDomainModel(emptyList()) // For now, skip loading files in list view
+                // For list view, load files count only for performance
+                entity.toDomainModel(emptyList())
             }
         }
     }
@@ -28,7 +34,8 @@ class SongRepository(private val database: TroubaShareDatabase) {
     fun searchSongs(groupId: String, query: String): Flow<List<Song>> {
         return songDao.searchSongs(groupId, query).map { entities ->
             entities.map { entity ->
-                entity.toDomainModel(emptyList()) // For now, skip loading files in list view
+                // For search view, load files count only for performance  
+                entity.toDomainModel(emptyList())
             }
         }
     }
@@ -105,25 +112,77 @@ class SongRepository(private val database: TroubaShareDatabase) {
     suspend fun addFileToSong(
         songId: String,
         memberId: String,
-        filePath: String,
-        fileType: FileType,
-        fileName: String
-    ): SongFile {
-        val fileId = UUID.randomUUID().toString()
-        val now = System.currentTimeMillis()
-        
-        val entity = SongFileEntity(
-            id = fileId,
-            songId = songId,
-            memberId = memberId,
-            filePath = filePath,
-            fileType = fileType.name,
-            fileName = fileName,
-            createdAt = now
-        )
-        
-        songDao.insertSongFile(entity)
-        return entity.toDomainModel()
+        fileName: String,
+        inputStream: InputStream
+    ): Result<SongFile> {
+        return try {
+            val song = songDao.getSongById(songId)
+                ?: return Result.failure(Exception("Song not found"))
+            
+            // Save file to storage
+            val result = fileManager.saveFile(
+                groupId = song.groupId,
+                songId = songId,
+                memberId = memberId,
+                fileName = fileName,
+                inputStream = inputStream
+            )
+            
+            if (result.isFailure) {
+                return Result.failure(result.exceptionOrNull() ?: Exception("Failed to save file"))
+            }
+            
+            val filePath = result.getOrThrow()
+            val fileType = when {
+                fileManager.isPdfFile(fileName) -> FileType.PDF
+                fileManager.isImageFile(fileName) -> FileType.IMAGE
+                else -> return Result.failure(Exception("Unsupported file type"))
+            }
+            
+            val fileId = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            
+            val entity = SongFileEntity(
+                id = fileId,
+                songId = songId,
+                memberId = memberId,
+                filePath = filePath,
+                fileType = fileType.name,
+                fileName = fileName,
+                createdAt = now
+            )
+            
+            songDao.insertSongFile(entity)
+            Result.success(entity.toDomainModel())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun removeFileFromSong(songFile: SongFile): Result<Unit> {
+        return try {
+            // Delete file from storage
+            val deleteResult = fileManager.deleteFile(songFile.filePath)
+            if (deleteResult.isFailure) {
+                return Result.failure(deleteResult.exceptionOrNull() ?: Exception("Failed to delete file"))
+            }
+            
+            // Remove from database
+            val entity = SongFileEntity(
+                id = songFile.id,
+                songId = songFile.songId,
+                memberId = songFile.memberId,
+                filePath = songFile.filePath,
+                fileType = songFile.fileType.name,
+                fileName = songFile.fileName,
+                createdAt = songFile.createdAt
+            )
+            
+            songDao.deleteSongFile(entity)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
 

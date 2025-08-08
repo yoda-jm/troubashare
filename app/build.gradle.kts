@@ -86,6 +86,9 @@ dependencies {
     // JSON
     implementation(libs.gson)
     
+    // File handling
+    implementation(libs.androidx.documentfile)
+    
     // Testing
     testImplementation(libs.junit)
     

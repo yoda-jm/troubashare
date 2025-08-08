@@ -47,6 +47,20 @@ fun TroubaShareNavigation(
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onSwitchGroup = { newGroupId ->
+                    navController.navigate(Screen.Home.createRoute(newGroupId)) {
+                        popUpTo(Screen.Home.route) {
+                            inclusive = true
+                        }
+                    }
+                },
+                onCreateNewGroup = {
+                    navController.navigate(Screen.GroupSelection.route) {
+                        popUpTo(Screen.Home.route) {
+                            inclusive = true
+                        }
+                    }
                 }
             )
         }

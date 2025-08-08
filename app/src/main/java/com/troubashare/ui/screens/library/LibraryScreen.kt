@@ -17,7 +17,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.flow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.troubashare.R
 import com.troubashare.data.database.TroubaShareDatabase
@@ -34,18 +36,37 @@ fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val database = remember { TroubaShareDatabase.getInstance(context) }
-    val repository = remember { SongRepository(database) }
-    val viewModel: LibraryViewModel = viewModel { LibraryViewModel(repository, groupId) }
+    val songRepository = remember { SongRepository(database) }
+    val groupRepository = remember { com.troubashare.data.repository.GroupRepository(database) }
+    val viewModel: LibraryViewModel = viewModel { LibraryViewModel(songRepository, groupId) }
     
     val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val createSongState by viewModel.createSongState.collectAsState()
     val songs by viewModel.songs.collectAsState()
+    
+    // Get current group for display
+    val currentGroup by remember {
+        flow { emit(groupRepository.getGroupById(groupId)) }
+    }.collectAsState(initial = null)
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.nav_library)) },
+                title = { 
+                    Column {
+                        Text(stringResource(R.string.nav_library))
+                        currentGroup?.let { group ->
+                            Text(
+                                text = group.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(

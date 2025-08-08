@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">TroubaShare</string>
+    
+    <!-- Navigation -->
+    <string name="nav_groups">Groups</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_setlists">Setlists</string>
+    <string name="nav_settings">Settings</string>
+    
+    <!-- Group Management -->
+    <string name="group_selection_title">Select Group</string>
+    <string name="create_group">Create Group</string>
+    <string name="group_name">Group Name</string>
+    <string name="member_name">Member Name</string>
+    <string name="add_member">Add Member</string>
+    
+    <!-- Common Actions -->
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="add">Add</string>
+    <string name="search">Search</string>
+    
+    <!-- Placeholder Messages -->
+    <string name="no_groups">No groups found. Create your first group to get started.</string>
+    <string name="no_songs">No songs in this library. Add your first song.</string>
+    <string name="no_setlists">No setlists created. Create your first setlist.</string>
+</resources>

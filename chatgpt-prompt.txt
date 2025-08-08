@@ -1,0 +1,73 @@
+You are an expert Android developer and software architect.  
+I want you to create a complete **technical design document** in Markdown for an Android application with the following specifications.  
+The document must include:  
+- Overview and goals  
+- User stories  
+- Functional requirements (detailed)  
+- Non-functional requirements  
+- UI/UX flow with screen descriptions  
+- Data model and storage approach  
+- Offline/online sync design  
+- Security considerations  
+- Future enhancements
+
+## Application specifications
+
+**Core features**:
+1. **Group & member management**
+   - Configure a group name and individual member names.
+   - Support multiple groups.
+   
+2. **Song library management**
+   - Store songs with metadata: title, artist, key, tempo, tags, etc.
+   - Each song may have multiple *versions* (e.g., "Piano/Voice" or "Full Band").
+   - For each member, a version may include:
+     - A PDF (possibly multi-page)
+     - An image
+     - Freehand notes (handwriting or stylus) stored as an overlay layer.
+   - If a member has no content for a song, display a white page with a centered message in concert mode.
+
+3. **Canvas overlay system**
+   - Each page of a PDF or image can have an associated freehand annotation overlay.
+   - Overlays are toggleable ON/OFF.
+   - Editing mode for overlays can be enabled/disabled.
+   - Zoom and pan must keep the overlay in sync with the underlying page.
+
+4. **Setlist management**
+   - A setlist is an ordered list of songs (and versions).
+   - Multiple setlists can be stored and switched between.
+   - Editing setlists with drag-and-drop reordering.
+   - Support for versioning or "last modified" timestamps for sync purposes.
+   - Setlists reference songs from the song library, not copies.
+
+5. **Concert mode**
+   - Fullscreen mode with:
+     - Song title at top center.
+     - Navigation arrows left/right to go to previous/next song.
+     - Arrows grayed out when at first or last song.
+     - Optional clock and/or timer.
+   - Select which member you are (so the app shows your specific version/notes).
+   - Manual navigation only (no auto-advance).
+
+6. **Sync & storage**
+   - Song library stored centrally (e.g., Google Drive, Dropbox, or local export/import via email or file share).
+   - Setlists and songs can be downloaded for offline use (concert mode must work fully offline).
+   - Local caching and delta updates (based on modification timestamps).
+
+**Additional desired features**:
+- Create/import setlists from shared files or links.
+- Quick note-taking (typed text) per song or globally.
+- Metadata search/filter in the song library.
+- Support for PDF, image (JPG, PNG), and text notes.
+- Optional dark mode.
+
+**Examples of usage**:
+- **Scenario 1**: The guitarist creates a setlist on their tablet, uploads it to Google Drive. Other members open the app, see a notification that the setlist was updated, download it, and use it in concert mode offline.
+- **Scenario 2**: The singer imports a PDF of lyrics, adds handwritten annotations with a stylus, hides them during rehearsal, and shows them in the concert.
+
+## Deliverable:
+1. Produce the complete technical design document in Markdown format, following best practices for clarity, maintainability, and future scalability.
+2. Save the document locally as `band_setlist_app_design.md`.
+3. Output the saved file in the environment so I can download it.
+
+

@@ -15,7 +15,12 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.detectTapGestures
 import com.troubashare.domain.model.*
 import java.util.*
 
@@ -49,15 +54,26 @@ fun AnnotationCanvas(
     }
     
     val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
     
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(drawingState.tool, drawingState.isDrawing) {
-                // Only handle drawing gestures for pen/highlighter/eraser tools
-                if (drawingState.isDrawing && 
+                // Handle drawing gestures for pen/highlighter tools when in drawing mode
+                // Handle text tool tap gestures
+                if (drawingState.isDrawing && drawingState.tool == DrawingTool.TEXT) {
+                    detectTapGestures { offset ->
+                        onDrawingStateChanged(
+                            drawingState.copy(
+                                showTextDialog = true,
+                                textDialogPosition = offset
+                            )
+                        )
+                    }
+                } else if (drawingState.isDrawing && 
                     (drawingState.tool == DrawingTool.PEN || 
-                     drawingState.tool == DrawingTool.HIGHLIGHTER || 
+                     drawingState.tool == DrawingTool.HIGHLIGHTER ||
                      drawingState.tool == DrawingTool.ERASER)) {
                     
                     detectDragGestures(
@@ -114,7 +130,11 @@ fun AnnotationCanvas(
         allStrokes.forEach { stroke ->
             if (stroke.points.isNotEmpty()) {
                 val path = createPathFromPoints(stroke.points)
-                val strokeColor = Color(stroke.color.toInt())
+                val strokeColor = try {
+                    Color(stroke.color.toULong())
+                } catch (e: Exception) {
+                    Color.Red // Fallback color
+                }
                 
                 when (stroke.tool) {
                     DrawingTool.PEN -> {
@@ -140,16 +160,37 @@ fun AnnotationCanvas(
                         )
                     }
                     DrawingTool.ERASER -> {
-                        // Eraser would need special handling - for now, draw as white
+                        // For eraser, use the background color or white with alpha blending
                         drawPath(
                             path = path,
-                            color = Color.White,
+                            color = Color.White.copy(alpha = 1f),
                             style = Stroke(
-                                width = stroke.strokeWidth * 2f,
+                                width = stroke.strokeWidth * 3f, // Make eraser thicker
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
                         )
+                    }
+                    DrawingTool.SELECT -> {
+                        // SELECT tool is for annotation selection/deletion - don't draw these as strokes
+                        // Selection will be handled separately
+                    }
+                    DrawingTool.TEXT -> {
+                        // Draw text annotation
+                        stroke.text?.let { text ->
+                            if (stroke.points.isNotEmpty()) {
+                                val position = stroke.points.first()
+                                drawText(
+                                    textMeasurer = textMeasurer,
+                                    text = text,
+                                    topLeft = Offset(position.x, position.y),
+                                    style = TextStyle(
+                                        color = strokeColor,
+                                        fontSize = (stroke.strokeWidth * 4).sp
+                                    )
+                                )
+                            }
+                        }
                     }
                     DrawingTool.PAN_ZOOM -> {
                         // PAN_ZOOM tool doesn't create strokes
@@ -188,13 +229,19 @@ fun AnnotationCanvas(
                 DrawingTool.ERASER -> {
                     drawPath(
                         path = path,
-                        color = Color.White,
+                        color = Color.White.copy(alpha = 1f),
                         style = Stroke(
-                            width = drawingState.strokeWidth * 2f,
+                            width = drawingState.strokeWidth * 3f, // Make eraser thicker
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )
                     )
+                }
+                DrawingTool.SELECT -> {
+                    // SELECT tool doesn't draw preview strokes
+                }
+                DrawingTool.TEXT -> {
+                    // TEXT tool will have separate text input handling
                 }
                 DrawingTool.PAN_ZOOM -> {
                     // PAN_ZOOM tool doesn't draw strokes
@@ -206,11 +253,22 @@ fun AnnotationCanvas(
 
 private fun createPathFromPoints(points: List<com.troubashare.domain.model.AnnotationPoint>): Path {
     val path = Path()
-    if (points.isNotEmpty()) {
-        path.moveTo(points.first().x, points.first().y)
-        points.drop(1).forEach { point ->
-            path.lineTo(point.x, point.y)
+    try {
+        if (points.isNotEmpty()) {
+            val firstPoint = points.first()
+            // Check for valid coordinates
+            if (firstPoint.x.isFinite() && firstPoint.y.isFinite()) {
+                path.moveTo(firstPoint.x, firstPoint.y)
+                points.drop(1).forEach { point ->
+                    if (point.x.isFinite() && point.y.isFinite()) {
+                        path.lineTo(point.x, point.y)
+                    }
+                }
+            }
         }
+    } catch (e: Exception) {
+        // Return empty path if there's an issue
+        return Path()
     }
     return path
 }

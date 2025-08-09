@@ -58,6 +58,7 @@ class AnnotationRepository(
             color = stroke.color,
             strokeWidth = stroke.strokeWidth,
             tool = stroke.tool.name,
+            text = stroke.text,
             createdAt = stroke.createdAt
         )
         
@@ -119,6 +120,23 @@ class AnnotationRepository(
         annotationDao.deleteAnnotationsByFile(fileId)
     }
     
+    suspend fun removeStrokeFromAnnotation(annotationId: String, stroke: AnnotationStroke) {
+        // Delete points for the stroke
+        annotationDao.deletePointsByStroke(stroke.id)
+        
+        // Delete the stroke entity
+        val strokeEntity = AnnotationStrokeEntity(
+            id = stroke.id,
+            annotationId = annotationId,
+            color = stroke.color,
+            strokeWidth = stroke.strokeWidth,
+            tool = stroke.tool.name,
+            text = stroke.text,
+            createdAt = stroke.createdAt
+        )
+        annotationDao.deleteStroke(strokeEntity)
+    }
+    
     private suspend fun getStrokesForAnnotation(annotationId: String): List<AnnotationStroke> {
         val strokeEntities = annotationDao.getStrokesByAnnotation(annotationId)
         return strokeEntities.map { strokeEntity ->
@@ -138,6 +156,7 @@ class AnnotationRepository(
                 color = strokeEntity.color,
                 strokeWidth = strokeEntity.strokeWidth,
                 tool = DrawingTool.valueOf(strokeEntity.tool),
+                text = strokeEntity.text,
                 createdAt = strokeEntity.createdAt
             )
         }

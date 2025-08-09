@@ -76,8 +76,8 @@ fun FileViewerScreen(
                         }
                     ) {
                         Icon(
-                            imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
-                            contentDescription = if (drawingState.isDrawing) "Exit drawing mode" else "Enter drawing mode",
+                            imageVector = if (drawingState.isDrawing) Icons.Default.Edit else Icons.Default.Visibility,
+                            contentDescription = if (drawingState.isDrawing) "Drawing mode - tap to view only" else "View mode - tap to draw",
                             tint = if (drawingState.isDrawing) MaterialTheme.colorScheme.primary else LocalContentColor.current
                         )
                     }

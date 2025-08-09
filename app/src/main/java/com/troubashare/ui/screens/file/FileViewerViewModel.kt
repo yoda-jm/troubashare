@@ -1,6 +1,7 @@
 package com.troubashare.ui.screens.file
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.AnnotationRepository
@@ -68,6 +69,34 @@ class FileViewerViewModel(
         _drawingState.value = newState
     }
     
+    fun addTextAnnotation(text: String, position: androidx.compose.ui.geometry.Offset) {
+        if (text.isNotBlank()) {
+            val stroke = AnnotationStroke(
+                id = UUID.randomUUID().toString(),
+                points = listOf(
+                    AnnotationPoint(
+                        x = position.x,
+                        y = position.y,
+                        pressure = 1f,
+                        timestamp = System.currentTimeMillis()
+                    )
+                ),
+                color = _drawingState.value.color.toArgb().toLong(),
+                strokeWidth = _drawingState.value.strokeWidth,
+                tool = DrawingTool.TEXT,
+                text = text,
+                createdAt = System.currentTimeMillis()
+            )
+            addStroke(stroke)
+        }
+        
+        // Close the text dialog
+        _drawingState.value = _drawingState.value.copy(
+            showTextDialog = false,
+            textDialogPosition = null
+        )
+    }
+    
     fun addStroke(stroke: AnnotationStroke) {
         viewModelScope.launch {
             try {
@@ -131,6 +160,37 @@ class FileViewerViewModel(
     
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+    
+    fun deleteStroke(stroke: AnnotationStroke) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+                
+                // Find the annotation containing this stroke
+                val annotation = _annotations.value.find { annotation ->
+                    annotation.strokes.any { it.id == stroke.id }
+                }
+                
+                annotation?.let {
+                    annotationRepository.removeStrokeFromAnnotation(it.id, stroke)
+                    loadAnnotations()
+                }
+                
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Failed to delete stroke: ${e.message}"
+                )
+            } finally {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
+        }
+    }
+    
+    fun showAnnotationsList() {
+        _drawingState.value = _drawingState.value.copy(
+            tool = DrawingTool.SELECT // Use SELECT as select mode
+        )
     }
     
     private fun loadAnnotations() {

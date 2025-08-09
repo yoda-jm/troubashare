@@ -1,5 +1,6 @@
 package com.troubashare.domain.model
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
@@ -19,6 +20,7 @@ data class AnnotationStroke(
     val color: Long = Color.Red.toArgb().toLong(),
     val strokeWidth: Float = 3f,
     val tool: DrawingTool = DrawingTool.PEN,
+    val text: String? = null, // For TEXT tool annotations
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -33,6 +35,8 @@ enum class DrawingTool(val displayName: String) {
     PEN("Pen"),
     HIGHLIGHTER("Highlighter"),
     ERASER("Eraser"),
+    TEXT("Text"),
+    SELECT("Select"),
     PAN_ZOOM("Pan/Zoom")
 }
 
@@ -44,5 +48,7 @@ data class DrawingState(
     val currentStroke: AnnotationStroke? = null,
     val scale: Float = 1f,
     val offsetX: Float = 0f,
-    val offsetY: Float = 0f
+    val offsetY: Float = 0f,
+    val showTextDialog: Boolean = false,
+    val textDialogPosition: Offset? = null
 )

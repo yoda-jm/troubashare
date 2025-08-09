@@ -23,5 +23,6 @@ data class AnnotationStrokeEntity(
     val color: Long,
     val strokeWidth: Float,
     val tool: String, // DrawingTool.name
+    val text: String? = null, // For TEXT tool annotations
     val createdAt: Long = System.currentTimeMillis()
 )

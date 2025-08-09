@@ -18,12 +18,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalConfiguration
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -149,19 +154,21 @@ fun AnnotatablePDFViewer(
                         drawingState = drawingState,
                         onDrawingStateChanged = viewModel::updateDrawingState,
                         isVertical = true,
-                        modifier = Modifier.fillMaxHeight()
+                        modifier = Modifier.fillMaxHeight(),
+                        annotations = annotations,
+                        onDeleteStroke = viewModel::deleteStroke
                     )
                 }
             }
             
-            // PDF content - ensure it doesn't overlap with toolbar
+            // PDF content - ensure it doesn't overlap with toolbar  
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .padding(start = if (drawingState.isDrawing) 4.dp else 0.dp)
+                    .clipToBounds() // Prevent content from escaping bounds
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
                 PDFContent(
                     pageCount = pageCount,
                     currentPage = currentPage,
@@ -178,7 +185,6 @@ fun AnnotatablePDFViewer(
                     annotations = annotations,
                     viewModel = viewModel
                 )
-                }
             }
         }
     } else {
@@ -219,28 +225,36 @@ fun AnnotatablePDFViewer(
                 AnnotationToolbar(
                     drawingState = drawingState,
                     onDrawingStateChanged = viewModel::updateDrawingState,
-                    isVertical = false
+                    isVertical = false,
+                    annotations = annotations,
+                    onDeleteStroke = viewModel::deleteStroke
                 )
             }
             
             // PDF content
-            PDFContent(
-                pageCount = pageCount,
-                currentPage = currentPage,
-                onPageChanged = { currentPage = it },
-                isLoading = isLoading,
-                error = error,
-                bitmap = bitmap,
-                scale = scale,
-                offsetX = offsetX,
-                offsetY = offsetY,
-                onScaleChanged = { newScale -> scale = newScale },
-                onOffsetChanged = { newX, newY -> offsetX = newX; offsetY = newY },
-                drawingState = drawingState,
-                annotations = annotations,
-                viewModel = viewModel,
-                modifier = Modifier.weight(1f)
-            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clipToBounds() // Prevent content from escaping bounds
+            ) {
+                PDFContent(
+                    pageCount = pageCount,
+                    currentPage = currentPage,
+                    onPageChanged = { currentPage = it },
+                    isLoading = isLoading,
+                    error = error,
+                    bitmap = bitmap,
+                    scale = scale,
+                    offsetX = offsetX,
+                    offsetY = offsetY,
+                    onScaleChanged = { newScale -> scale = newScale },
+                    onOffsetChanged = { newX, newY -> offsetX = newX; offsetY = newY },
+                    drawingState = drawingState,
+                    annotations = annotations,
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -300,7 +314,12 @@ fun PDFContent(
                 }
                 
                 Box(modifier = Modifier.fillMaxSize()) {
-                    // PDF content with zoom gestures
+                    // PDF base layer with zoom gestures - only active when not drawing with pen/highlighter
+                    val enableZoom = !drawingState.isDrawing || 
+                                   drawingState.tool == DrawingTool.PAN_ZOOM || 
+                                   drawingState.tool == DrawingTool.SELECT ||
+                                   drawingState.tool == DrawingTool.TEXT
+                    
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -310,34 +329,33 @@ fun PDFContent(
                                 translationX = currentOffsetX,
                                 translationY = currentOffsetY
                             )
-                            .pointerInput(drawingState.tool, drawingState.isDrawing) {
-                                // Handle zoom gestures when not using pen/highlighter/eraser
-                                if (drawingState.tool == DrawingTool.PAN_ZOOM || !drawingState.isDrawing) {
-                                    detectTransformGestures { _, pan, zoom, _ ->
-                                        val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
-                                        currentScale = newScale
-                                        currentOffsetX += pan.x
-                                        currentOffsetY += pan.y
-                                    }
-                                }
-                            }
-                            .pointerInput(drawingState.tool, drawingState.isDrawing, "doubletap") {
-                                // Handle double tap zoom when not using pen/highlighter/eraser
-                                if (drawingState.tool == DrawingTool.PAN_ZOOM || !drawingState.isDrawing) {
-                                    detectTapGestures(
-                                        onDoubleTap = { tapOffset ->
-                                            if (currentScale > 1f) {
-                                                currentScale = 1f
-                                                currentOffsetX = 0f
-                                                currentOffsetY = 0f
-                                            } else {
-                                                currentScale = 2f
-                                                currentOffsetX = (size.width / 2f - tapOffset.x) * (currentScale - 1f)
-                                                currentOffsetY = (size.height / 2f - tapOffset.y) * (currentScale - 1f)
+                            .let { modifier ->
+                                if (enableZoom) {
+                                    modifier
+                                        .pointerInput("zoom") {
+                                            detectTransformGestures { _, pan, zoom, _ ->
+                                                val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
+                                                currentScale = newScale
+                                                currentOffsetX += pan.x
+                                                currentOffsetY += pan.y
                                             }
                                         }
-                                    )
-                                }
+                                        .pointerInput("doubletap") {
+                                            detectTapGestures(
+                                                onDoubleTap = { tapOffset ->
+                                                    if (currentScale > 1f) {
+                                                        currentScale = 1f
+                                                        currentOffsetX = 0f
+                                                        currentOffsetY = 0f
+                                                    } else {
+                                                        currentScale = 2f
+                                                        currentOffsetX = (size.width / 2f - tapOffset.x) * (currentScale - 1f)
+                                                        currentOffsetY = (size.height / 2f - tapOffset.y) * (currentScale - 1f)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                } else modifier
                             }
                     ) {
                         // Display PDF bitmap
@@ -348,8 +366,8 @@ fun PDFContent(
                         )
                     }
                     
-                    // Annotation layer - only intercept gestures for drawing tools
-                    if (drawingState.isDrawing && (drawingState.tool == DrawingTool.PEN || drawingState.tool == DrawingTool.HIGHLIGHTER || drawingState.tool == DrawingTool.ERASER)) {
+                    // Annotation layer with same transform as background 
+                    if (drawingState.isDrawing) {
                         AnnotationCanvas(
                             backgroundBitmap = null,
                             annotations = annotations,
@@ -383,6 +401,58 @@ fun PDFContent(
             }
         }
     }
+    
+    // Text input dialog
+    if (drawingState.showTextDialog && drawingState.textDialogPosition != null) {
+        TextInputDialog(
+            onTextEntered = { text ->
+                viewModel.addTextAnnotation(text, drawingState.textDialogPosition!!)
+            },
+            onDismiss = {
+                viewModel.updateDrawingState(
+                    drawingState.copy(
+                        showTextDialog = false,
+                        textDialogPosition = null
+                    )
+                )
+            }
+        )
+    }
+}
+
+@Composable
+fun TextInputDialog(
+    onTextEntered: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Text Annotation") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Enter text") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onTextEntered(text)
+                }
+            ) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -390,6 +460,8 @@ fun AnnotationOverlay(
     annotations: List<com.troubashare.domain.model.Annotation>,
     modifier: Modifier = Modifier
 ) {
+    val textMeasurer = rememberTextMeasurer()
+    
     Canvas(
         modifier = modifier.fillMaxSize()
     ) {
@@ -398,7 +470,11 @@ fun AnnotationOverlay(
             annotationItem.strokes.forEach { stroke ->
                 if (stroke.points.isNotEmpty()) {
                     val path = createPathFromPoints(stroke.points)
-                    val strokeColor = androidx.compose.ui.graphics.Color(stroke.color.toInt())
+                    val strokeColor = try {
+                        androidx.compose.ui.graphics.Color(stroke.color.toULong())
+                    } catch (e: Exception) {
+                        androidx.compose.ui.graphics.Color.Red // Fallback color
+                    }
                     
                     when (stroke.tool) {
                         com.troubashare.domain.model.DrawingTool.PEN -> {
@@ -426,13 +502,31 @@ fun AnnotationOverlay(
                         com.troubashare.domain.model.DrawingTool.ERASER -> {
                             drawPath(
                                 path = path,
-                                color = androidx.compose.ui.graphics.Color.White,
+                                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 1f),
                                 style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                    width = stroke.strokeWidth * 2f,
+                                    width = stroke.strokeWidth * 3f, // Make eraser thicker
                                     cap = androidx.compose.ui.graphics.StrokeCap.Round,
                                     join = androidx.compose.ui.graphics.StrokeJoin.Round
                                 )
                             )
+                        }
+                        com.troubashare.domain.model.DrawingTool.SELECT -> {
+                            // SELECT tool doesn't create strokes
+                        }
+                        com.troubashare.domain.model.DrawingTool.TEXT -> {
+                            // Draw text annotation
+                            stroke.text?.let { text ->
+                                val position = stroke.points.first()
+                                drawText(
+                                    textMeasurer = textMeasurer,
+                                    text = text,
+                                    topLeft = androidx.compose.ui.geometry.Offset(position.x, position.y),
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        color = strokeColor,
+                                        fontSize = (stroke.strokeWidth * 4).sp
+                                    )
+                                )
+                            }
                         }
                         com.troubashare.domain.model.DrawingTool.PAN_ZOOM -> {
                             // PAN_ZOOM tool doesn't create strokes
@@ -446,11 +540,22 @@ fun AnnotationOverlay(
 
 private fun createPathFromPoints(points: List<com.troubashare.domain.model.AnnotationPoint>): androidx.compose.ui.graphics.Path {
     val path = androidx.compose.ui.graphics.Path()
-    if (points.isNotEmpty()) {
-        path.moveTo(points.first().x, points.first().y)
-        points.drop(1).forEach { point ->
-            path.lineTo(point.x, point.y)
+    try {
+        if (points.isNotEmpty()) {
+            val firstPoint = points.first()
+            // Check for valid coordinates
+            if (firstPoint.x.isFinite() && firstPoint.y.isFinite()) {
+                path.moveTo(firstPoint.x, firstPoint.y)
+                points.drop(1).forEach { point ->
+                    if (point.x.isFinite() && point.y.isFinite()) {
+                        path.lineTo(point.x, point.y)
+                    }
+                }
+            }
         }
+    } catch (e: Exception) {
+        // Return empty path if there's an issue
+        return androidx.compose.ui.graphics.Path()
     }
     return path
 }

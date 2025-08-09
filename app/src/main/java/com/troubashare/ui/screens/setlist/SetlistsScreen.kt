@@ -30,6 +30,7 @@ fun SetlistsScreen(
     groupId: String,
     onNavigateBack: () -> Unit,
     onSetlistClick: (String) -> Unit = {},
+    onEditSetlist: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -155,6 +156,7 @@ fun SetlistsScreen(
                         SetlistCard(
                             setlist = setlist,
                             onClick = { onSetlistClick(setlist.id) },
+                            onEdit = { onEditSetlist(setlist.id) },
                             onDelete = { viewModel.deleteSetlist(setlist) }
                         )
                     }
@@ -181,6 +183,7 @@ fun SetlistsScreen(
 fun SetlistCard(
     setlist: Setlist,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -251,14 +254,24 @@ fun SetlistCard(
                     }
                 }
                 
-                IconButton(
-                    onClick = { showDeleteDialog = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete setlist",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                Row {
+                    IconButton(onClick = onEdit) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit setlist",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = { showDeleteDialog = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete setlist",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }

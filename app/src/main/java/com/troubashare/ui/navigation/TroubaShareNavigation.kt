@@ -10,6 +10,7 @@ import com.troubashare.ui.screens.home.HomeScreen
 import com.troubashare.ui.screens.library.LibraryScreen
 import com.troubashare.ui.screens.song.SongDetailScreen
 import com.troubashare.ui.screens.setlist.SetlistsScreen
+import com.troubashare.ui.screens.setlist.SetlistEditorScreen
 import com.troubashare.ui.screens.settings.SettingsScreen
 import com.troubashare.ui.screens.file.FileViewerScreen
 import com.troubashare.domain.model.SongFile
@@ -118,6 +119,22 @@ fun TroubaShareNavigation(
             val groupId = backStackEntry.arguments?.getString(Screen.Setlists.GROUP_ID_ARG) ?: ""
             SetlistsScreen(
                 groupId = groupId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onEditSetlist = { setlistId ->
+                    navController.navigate(Screen.SetlistEditor.createRoute(setlistId))
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.SetlistEditor.route,
+            arguments = Screen.SetlistEditor.arguments
+        ) { backStackEntry ->
+            val setlistId = backStackEntry.arguments?.getString(Screen.SetlistEditor.SETLIST_ID_ARG) ?: ""
+            SetlistEditorScreen(
+                setlistId = setlistId,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

@@ -28,6 +28,9 @@ class SetlistEditorViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _editMetadataState = MutableStateFlow(EditMetadataUiState())
+    val editMetadataState: StateFlow<EditMetadataUiState> = _editMetadataState.asStateFlow()
+
     // Available songs (not already in setlist)
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val availableSongs = combine(
@@ -149,11 +152,95 @@ class SetlistEditorViewModel(
             }
         }
     }
+
+    fun showEditMetadataDialog() {
+        _setlist.value?.let { setlist ->
+            _editMetadataState.value = EditMetadataUiState(
+                name = setlist.name,
+                description = setlist.description ?: "",
+                venue = setlist.venue ?: "",
+                eventDate = setlist.eventDate
+            )
+            _uiState.value = _uiState.value.copy(showEditMetadataDialog = true)
+        }
+    }
+
+    fun hideEditMetadataDialog() {
+        _uiState.value = _uiState.value.copy(showEditMetadataDialog = false)
+        _editMetadataState.value = EditMetadataUiState()
+    }
+
+    fun updateMetadataName(name: String) {
+        _editMetadataState.value = _editMetadataState.value.copy(
+            name = name,
+            errorMessage = null
+        )
+    }
+
+    fun updateMetadataDescription(description: String) {
+        _editMetadataState.value = _editMetadataState.value.copy(description = description)
+    }
+
+    fun updateMetadataVenue(venue: String) {
+        _editMetadataState.value = _editMetadataState.value.copy(venue = venue)
+    }
+
+    fun updateMetadataEventDate(eventDate: Long?) {
+        _editMetadataState.value = _editMetadataState.value.copy(eventDate = eventDate)
+    }
+
+    fun saveMetadata() {
+        val state = _editMetadataState.value
+        if (!state.isValid) {
+            _editMetadataState.value = state.copy(
+                errorMessage = "Setlist name is required"
+            )
+            return
+        }
+
+        _setlist.value?.let { currentSetlist ->
+            viewModelScope.launch {
+                _editMetadataState.value = state.copy(isSaving = true)
+
+                try {
+                    val updatedSetlist = currentSetlist.copy(
+                        name = state.name,
+                        description = state.description.takeIf { it.isNotBlank() },
+                        venue = state.venue.takeIf { it.isNotBlank() },
+                        eventDate = state.eventDate,
+                        updatedAt = System.currentTimeMillis()
+                    )
+
+                    setlistRepository.updateSetlist(updatedSetlist)
+                    _setlist.value = updatedSetlist
+                    hideEditMetadataDialog()
+                } catch (e: Exception) {
+                    _editMetadataState.value = _editMetadataState.value.copy(
+                        isSaving = false,
+                        errorMessage = e.message ?: "Failed to update setlist"
+                    )
+                }
+            }
+        }
+    }
 }
 
 data class SetlistEditorUiState(
     val isAddingSong: Boolean = false,
     val addingSongId: String? = null,
     val isSaving: Boolean = false,
+    val showEditMetadataDialog: Boolean = false,
     val errorMessage: String? = null
 )
+
+data class EditMetadataUiState(
+    val name: String = "",
+    val description: String = "",
+    val venue: String = "",
+    val eventDate: Long? = null,
+    val isSaving: Boolean = false,
+    val errorMessage: String? = null
+) {
+    val isValid: Boolean
+        get() = name.isNotBlank()
+}

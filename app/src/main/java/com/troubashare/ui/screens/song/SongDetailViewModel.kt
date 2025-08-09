@@ -22,13 +22,12 @@ class SongDetailViewModel(
     private val _uiState = MutableStateFlow(SongDetailUiState())
     val uiState: StateFlow<SongDetailUiState> = _uiState.asStateFlow()
 
-    val song: StateFlow<Song?> = flow {
-        emit(songRepository.getSongById(songId))
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = null
-    )
+    val song: StateFlow<Song?> = songRepository.getSongByIdFlow(songId)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
 
     val currentGroup: StateFlow<Group?> = flow {
         emit(groupRepository.getGroupById(groupId))
@@ -63,8 +62,7 @@ class SongDetailViewModel(
                 
                 if (result.isSuccess) {
                     _uiState.value = _uiState.value.copy(isUploading = false)
-                    // Refresh song data to show new file
-                    refreshSong()
+                    // Song data will automatically refresh through reactive Flow
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isUploading = false,
@@ -86,21 +84,12 @@ class SongDetailViewModel(
             
             val result = songRepository.removeFileFromSong(file)
             if (result.isSuccess) {
-                // Refresh song data to remove deleted file
-                refreshSong()
+                // Song data will automatically refresh through reactive Flow
             } else {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = result.exceptionOrNull()?.message ?: "Failed to delete file"
                 )
             }
-        }
-    }
-
-    private fun refreshSong() {
-        viewModelScope.launch {
-            // Trigger refresh by getting song data again
-            val refreshedSong = songRepository.getSongById(songId)
-            // The StateFlow will automatically update through the flow collection
         }
     }
 

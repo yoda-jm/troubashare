@@ -22,6 +22,9 @@ class LibraryViewModel(
     
     private val _createSongState = MutableStateFlow(CreateSongUiState())
     val createSongState: StateFlow<CreateSongUiState> = _createSongState.asStateFlow()
+    
+    private val _editSongState = MutableStateFlow(EditSongUiState())
+    val editSongState: StateFlow<EditSongUiState> = _editSongState.asStateFlow()
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val songs = searchQuery
@@ -51,6 +54,25 @@ class LibraryViewModel(
     fun hideCreateSongDialog() {
         _uiState.value = _uiState.value.copy(showCreateDialog = false)
         _createSongState.value = CreateSongUiState()
+    }
+    
+    fun showEditSongDialog(song: Song) {
+        _uiState.value = _uiState.value.copy(showEditDialog = true)
+        _editSongState.value = EditSongUiState(
+            songId = song.id,
+            title = song.title,
+            artist = song.artist ?: "",
+            key = song.key ?: "",
+            tempoInput = song.tempo?.toString() ?: "",
+            tempo = song.tempo,
+            notes = song.notes ?: "",
+            tags = song.tags
+        )
+    }
+    
+    fun hideEditSongDialog() {
+        _uiState.value = _uiState.value.copy(showEditDialog = false)
+        _editSongState.value = EditSongUiState()
     }
 
     fun updateSongTitle(title: String) {
@@ -144,15 +166,97 @@ class LibraryViewModel(
         }
     }
 
+    // Edit song methods
+    fun updateEditSongTitle(title: String) {
+        _editSongState.value = _editSongState.value.copy(
+            title = title,
+            errorMessage = null
+        )
+    }
+
+    fun updateEditSongArtist(artist: String) {
+        _editSongState.value = _editSongState.value.copy(artist = artist)
+    }
+
+    fun updateEditSongKey(key: String) {
+        _editSongState.value = _editSongState.value.copy(key = key)
+    }
+
+    fun updateEditSongTempo(tempoStr: String) {
+        val tempo = tempoStr.toIntOrNull()
+        _editSongState.value = _editSongState.value.copy(
+            tempoInput = tempoStr,
+            tempo = tempo
+        )
+    }
+
+    fun updateEditSongNotes(notes: String) {
+        _editSongState.value = _editSongState.value.copy(notes = notes)
+    }
+
+    fun addEditTag(tag: String) {
+        val trimmedTag = tag.trim()
+        if (trimmedTag.isNotEmpty() && !_editSongState.value.tags.contains(trimmedTag)) {
+            val updatedTags = _editSongState.value.tags + trimmedTag
+            _editSongState.value = _editSongState.value.copy(
+                tags = updatedTags,
+                tagInput = ""
+            )
+        }
+    }
+
+    fun removeEditTag(tag: String) {
+        val updatedTags = _editSongState.value.tags - tag
+        _editSongState.value = _editSongState.value.copy(tags = updatedTags)
+    }
+
+    fun updateEditTagInput(input: String) {
+        _editSongState.value = _editSongState.value.copy(tagInput = input)
+    }
+
+    fun updateSong() {
+        val state = _editSongState.value
+        if (!state.isValid) {
+            _editSongState.value = state.copy(
+                errorMessage = "Song title is required"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _editSongState.value = state.copy(isUpdating = true)
+
+            try {
+                songRepository.updateSong(
+                    songId = state.songId!!,
+                    title = state.title,
+                    artist = state.artist.takeIf { it.isNotBlank() },
+                    key = state.key.takeIf { it.isNotBlank() },
+                    tempo = state.tempo,
+                    tags = state.tags,
+                    notes = state.notes.takeIf { it.isNotBlank() }
+                )
+                hideEditSongDialog()
+            } catch (error: Exception) {
+                _editSongState.value = _editSongState.value.copy(
+                    isUpdating = false,
+                    errorMessage = error.message ?: "Failed to update song"
+                )
+            }
+        }
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
         _createSongState.value = _createSongState.value.copy(errorMessage = null)
+        _editSongState.value = _editSongState.value.copy(errorMessage = null)
     }
 }
 
 data class LibraryUiState(
     val isLoading: Boolean = false,
     val showCreateDialog: Boolean = false,
+    val showEditDialog: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -170,4 +274,21 @@ data class CreateSongUiState(
 ) {
     val isValid: Boolean
         get() = title.isNotBlank()
+}
+
+data class EditSongUiState(
+    val songId: String? = null,
+    val title: String = "",
+    val artist: String = "",
+    val key: String = "",
+    val tempoInput: String = "",
+    val tempo: Int? = null,
+    val notes: String = "",
+    val tags: List<String> = emptyList(),
+    val tagInput: String = "",
+    val isUpdating: Boolean = false,
+    val errorMessage: String? = null
+) {
+    val isValid: Boolean
+        get() = title.isNotBlank() && songId != null
 }

@@ -28,6 +28,12 @@ interface GroupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMember(member: MemberEntity)
     
+    @Update
+    suspend fun updateMember(member: MemberEntity)
+    
+    @Delete
+    suspend fun deleteMember(member: MemberEntity)
+    
     @Query("DELETE FROM members WHERE groupId = :groupId")
     suspend fun deleteMembersByGroupId(groupId: String)
 }

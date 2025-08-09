@@ -18,6 +18,9 @@ import com.troubashare.R
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.domain.model.Group
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +41,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val currentGroup by viewModel.currentGroup.collectAsState()
     val allGroups by viewModel.allGroups.collectAsState()
+    val editGroupState by viewModel.editGroupState.collectAsState()
     
     Scaffold(
         topBar = {
@@ -57,6 +61,13 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.showEditGroupDialog() }) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit group"
+                        )
+                    }
+                    
                     IconButton(onClick = { viewModel.showGroupSwitcher() }) {
                         Icon(
                             imageVector = Icons.Default.Person,
@@ -158,6 +169,19 @@ fun HomeScreen(
                 onCreateNewGroup()
             },
             onDismiss = { viewModel.hideGroupSwitcher() }
+        )
+    }
+    
+    // Edit Group Dialog
+    if (uiState.showEditGroupDialog) {
+        EditGroupDialog(
+            state = editGroupState,
+            onGroupNameChange = viewModel::updateEditGroupName,
+            onMemberNameChange = viewModel::updateEditMemberName,
+            onAddMember = viewModel::addEditMemberField,
+            onRemoveMember = viewModel::removeEditMemberField,
+            onUpdate = viewModel::updateGroup,
+            onDismiss = viewModel::hideEditGroupDialog
         )
     }
 }
@@ -336,4 +360,115 @@ fun QuickActionCard(
             )
         }
     }
+}
+
+@Composable
+fun EditGroupDialog(
+    state: EditGroupUiState,
+    onGroupNameChange: (String) -> Unit,
+    onMemberNameChange: (Int, String) -> Unit,
+    onAddMember: () -> Unit,
+    onRemoveMember: (Int) -> Unit,
+    onUpdate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.edit_group)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = state.groupName,
+                    onValueChange = onGroupNameChange,
+                    label = { Text(stringResource(R.string.group_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = state.errorMessage != null
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "Members",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                state.members.forEachIndexed { index, member ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = member,
+                            onValueChange = { onMemberNameChange(index, it) },
+                            label = { Text("Member ${index + 1}") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        if (state.members.size > 1) {
+                            IconButton(
+                                onClick = { onRemoveMember(index) }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Remove member"
+                                )
+                            }
+                        }
+                    }
+                    
+                    if (index < state.members.size - 1) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedButton(
+                    onClick = onAddMember,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add Member")
+                }
+                
+                state.errorMessage?.let { errorMessage ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdate,
+                enabled = state.isValid && !state.isUpdating
+            ) {
+                if (state.isUpdating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(stringResource(R.string.save))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
 }

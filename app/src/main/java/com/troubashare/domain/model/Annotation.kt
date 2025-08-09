@@ -32,7 +32,8 @@ data class AnnotationPoint(
 enum class DrawingTool(val displayName: String) {
     PEN("Pen"),
     HIGHLIGHTER("Highlighter"),
-    ERASER("Eraser")
+    ERASER("Eraser"),
+    PAN_ZOOM("Pan/Zoom")
 }
 
 data class DrawingState(
@@ -40,5 +41,8 @@ data class DrawingState(
     val color: Color = Color.Red,
     val strokeWidth: Float = 3f,
     val isDrawing: Boolean = false,
-    val currentStroke: AnnotationStroke? = null
+    val currentStroke: AnnotationStroke? = null,
+    val scale: Float = 1f,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f
 )

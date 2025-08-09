@@ -45,6 +45,7 @@ fun LibraryScreen(
     val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val createSongState by viewModel.createSongState.collectAsState()
+    val editSongState by viewModel.editSongState.collectAsState()
     val songs by viewModel.songs.collectAsState()
     
     // Get current group for display
@@ -155,6 +156,9 @@ fun LibraryScreen(
                         SongCard(
                             song = song,
                             onClick = { onSongClick(song.id) },
+                            onEdit = { 
+                                viewModel.showEditSongDialog(song)
+                            },
                             onDelete = { viewModel.deleteSong(song) }
                         )
                     }
@@ -179,6 +183,23 @@ fun LibraryScreen(
             onDismiss = viewModel::hideCreateSongDialog
         )
     }
+    
+    // Edit Song Dialog
+    if (uiState.showEditDialog) {
+        EditSongDialog(
+            state = editSongState,
+            onTitleChange = viewModel::updateEditSongTitle,
+            onArtistChange = viewModel::updateEditSongArtist,
+            onKeyChange = viewModel::updateEditSongKey,
+            onTempoChange = viewModel::updateEditSongTempo,
+            onNotesChange = viewModel::updateEditSongNotes,
+            onTagInputChange = viewModel::updateEditTagInput,
+            onAddTag = viewModel::addEditTag,
+            onRemoveTag = viewModel::removeEditTag,
+            onUpdate = viewModel::updateSong,
+            onDismiss = viewModel::hideEditSongDialog
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,6 +207,7 @@ fun LibraryScreen(
 fun SongCard(
     song: Song,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -267,14 +289,24 @@ fun SongCard(
                     }
                 }
                 
-                IconButton(
-                    onClick = { showDeleteDialog = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete song",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                Row {
+                    IconButton(
+                        onClick = onEdit
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit song"
+                        )
+                    }
+                    IconButton(
+                        onClick = { showDeleteDialog = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete song",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
             
@@ -468,6 +500,163 @@ fun CreateSongDialog(
                 enabled = state.isValid && !state.isCreating
             ) {
                 if (state.isCreating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Save")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditSongDialog(
+    state: EditSongUiState,
+    onTitleChange: (String) -> Unit,
+    onArtistChange: (String) -> Unit,
+    onKeyChange: (String) -> Unit,
+    onTempoChange: (String) -> Unit,
+    onNotesChange: (String) -> Unit,
+    onTagInputChange: (String) -> Unit,
+    onAddTag: (String) -> Unit,
+    onRemoveTag: (String) -> Unit,
+    onUpdate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Song") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = state.title,
+                    onValueChange = onTitleChange,
+                    label = { Text("Song Title *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = state.errorMessage != null
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = state.artist,
+                    onValueChange = onArtistChange,
+                    label = { Text("Artist") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row {
+                    OutlinedTextField(
+                        value = state.key,
+                        onValueChange = onKeyChange,
+                        label = { Text("Key") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    Spacer(modifier = Modifier.width(8.dp))
+                    
+                    OutlinedTextField(
+                        value = state.tempoInput,
+                        onValueChange = onTempoChange,
+                        label = { Text("BPM") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = state.notes,
+                    onValueChange = onNotesChange,
+                    label = { Text("Notes") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3
+                )
+                
+                if (state.tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(state.tags) { tag ->
+                            InputChip(
+                                onClick = { onRemoveTag(tag) },
+                                label = { Text(tag) },
+                                selected = false,
+                                trailingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Remove tag",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = state.tagInput,
+                    onValueChange = onTagInputChange,
+                    label = { Text("Add tags") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (state.tagInput.isNotBlank()) {
+                                onAddTag(state.tagInput)
+                                keyboardController?.hide()
+                            }
+                        }
+                    ),
+                    trailingIcon = {
+                        if (state.tagInput.isNotBlank()) {
+                            IconButton(onClick = { onAddTag(state.tagInput) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add tag"
+                                )
+                            }
+                        }
+                    }
+                )
+                
+                state.errorMessage?.let { errorMessage ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdate,
+                enabled = state.isValid && !state.isUpdating
+            ) {
+                if (state.isUpdating) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp

@@ -13,6 +13,9 @@ interface SongDao {
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: String): SongEntity?
     
+    @Query("SELECT * FROM songs WHERE id = :id")
+    fun getSongByIdFlow(id: String): Flow<SongEntity?>
+    
     @Query("SELECT * FROM songs WHERE groupId = :groupId AND (title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%')")
     fun searchSongs(groupId: String, query: String): Flow<List<SongEntity>>
     
@@ -28,6 +31,9 @@ interface SongDao {
     // Song Files
     @Query("SELECT * FROM song_files WHERE songId = :songId")
     suspend fun getFilesBySongId(songId: String): List<SongFileEntity>
+    
+    @Query("SELECT * FROM song_files WHERE songId = :songId")
+    fun getFilesBySongIdFlow(songId: String): Flow<List<SongFileEntity>>
     
     @Query("SELECT COUNT(*) FROM song_files WHERE songId = :songId")
     suspend fun getFileCountBySongId(songId: String): Int

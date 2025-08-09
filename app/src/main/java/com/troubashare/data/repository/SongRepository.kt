@@ -9,6 +9,7 @@ import com.troubashare.domain.model.FileType
 import com.troubashare.data.file.FileManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import java.util.*
 import java.io.InputStream
 import com.google.gson.Gson
@@ -44,6 +45,17 @@ class SongRepository(
         val entity = songDao.getSongById(id) ?: return null
         val files = songDao.getFilesBySongId(id)
         return entity.toDomainModel(files.map { it.toDomainModel() })
+    }
+    
+    fun getSongByIdFlow(id: String): Flow<Song?> {
+        return combine(
+            songDao.getSongByIdFlow(id),
+            songDao.getFilesBySongIdFlow(id)
+        ) { songEntity, fileEntities ->
+            songEntity?.let { entity ->
+                entity.toDomainModel(fileEntities.map { it.toDomainModel() })
+            }
+        }
     }
     
     suspend fun createSong(
@@ -91,6 +103,33 @@ class SongRepository(
         
         songDao.updateSong(entity)
         return song.copy(updatedAt = entity.updatedAt)
+    }
+    
+    suspend fun updateSong(
+        songId: String,
+        title: String,
+        artist: String?,
+        key: String?,
+        tempo: Int?,
+        tags: List<String>,
+        notes: String?
+    ): Song {
+        val existingSong = songDao.getSongById(songId) 
+            ?: throw IllegalArgumentException("Song not found")
+        
+        val entity = existingSong.copy(
+            title = title,
+            artist = artist,
+            key = key,
+            tempo = tempo,
+            tags = gson.toJson(tags),
+            notes = notes,
+            updatedAt = System.currentTimeMillis()
+        )
+        
+        songDao.updateSong(entity)
+        val files = songDao.getFilesBySongId(songId)
+        return entity.toDomainModel(files.map { it.toDomainModel() })
     }
     
     suspend fun deleteSong(song: Song) {

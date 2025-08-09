@@ -41,7 +41,6 @@ fun FileViewerScreen(
     
     val uiState by viewModel.uiState.collectAsState()
     val drawingState by viewModel.drawingState.collectAsState()
-    var showAnnotationMode by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -70,21 +69,21 @@ fun FileViewerScreen(
                     }
                 },
                 actions = {
+                    // Drawing toggle button - directly toggle drawing mode
                     IconButton(
                         onClick = { 
-                            showAnnotationMode = !showAnnotationMode
-                            if (!showAnnotationMode) {
-                                // Exit drawing mode when closing annotations
-                                viewModel.updateDrawingState(drawingState.copy(isDrawing = false))
-                            }
+                            viewModel.toggleDrawingMode()
                         }
                     ) {
                         Icon(
-                            imageVector = if (showAnnotationMode) Icons.Default.Close else Icons.Default.Edit,
-                            contentDescription = if (showAnnotationMode) "Close annotations" else "Annotate",
-                            tint = if (showAnnotationMode) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
+                            contentDescription = if (drawingState.isDrawing) "Exit drawing mode" else "Enter drawing mode",
+                            tint = if (drawingState.isDrawing) MaterialTheme.colorScheme.primary else LocalContentColor.current
                         )
                     }
+                    
+                    // Clear button removed - user can clear via toolbar if needed
+                    
                     IconButton(onClick = { /* TODO: Share file */ }) {
                         Icon(
                             imageVector = Icons.Default.Share,
@@ -95,26 +94,16 @@ fun FileViewerScreen(
             )
         }
     ) { paddingValues ->
-        if (showAnnotationMode) {
-            AnnotatableFileViewer(
-                filePath = songFile.filePath,
-                fileName = songFile.fileName,
-                fileType = songFile.fileType.name,
-                viewModel = viewModel,
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            )
-        } else {
-            FileViewer(
-                filePath = songFile.filePath,
-                fileName = songFile.fileName,
-                fileType = songFile.fileType.name,
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            )
-        }
+        // Always use AnnotatableFileViewer - it handles both viewing and annotation modes
+        AnnotatableFileViewer(
+            filePath = songFile.filePath,
+            fileName = songFile.fileName,
+            fileType = songFile.fileType.name,
+            viewModel = viewModel,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        )
         
         // Show error message if any
         uiState.errorMessage?.let { errorMessage ->

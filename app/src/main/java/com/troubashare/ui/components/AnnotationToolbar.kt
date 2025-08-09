@@ -23,9 +23,47 @@ import com.troubashare.domain.model.DrawingTool
 fun AnnotationToolbar(
     drawingState: DrawingState,
     onDrawingStateChanged: (DrawingState) -> Unit,
-    onToggleDrawing: () -> Unit,
-    onClearAll: () -> Unit,
+    isVertical: Boolean = false,
     modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = if (isVertical) modifier.fillMaxHeight() else modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 4.dp
+    ) {
+        if (isVertical) {
+            // Vertical layout for landscape mode
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ToolbarContent(
+                    drawingState = drawingState,
+                    onDrawingStateChanged = onDrawingStateChanged,
+                    isVertical = true
+                )
+            }
+        } else {
+            // Horizontal layout for portrait mode
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ToolbarContent(
+                    drawingState = drawingState,
+                    onDrawingStateChanged = onDrawingStateChanged,
+                    isVertical = false
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolbarContent(
+    drawingState: DrawingState,
+    onDrawingStateChanged: (DrawingState) -> Unit,
+    isVertical: Boolean
 ) {
     val availableColors = listOf(
         Color.Red,
@@ -37,145 +75,207 @@ fun AnnotationToolbar(
         Color.Black
     )
     
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 4.dp
+    // Debug info - will remove later
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Drawing mode toggle
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onToggleDrawing,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (drawingState.isDrawing) 
-                            MaterialTheme.colorScheme.primary 
-                        else 
-                            MaterialTheme.colorScheme.outline
-                    )
-                ) {
-                    Icon(
-                        imageVector = if (drawingState.isDrawing) Icons.Default.Edit else Icons.Default.TouchApp,
-                        contentDescription = if (drawingState.isDrawing) "Stop drawing" else "Start drawing"
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (drawingState.isDrawing) "Drawing" else "View")
-                }
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
-                IconButton(
-                    onClick = onClearAll,
-                    enabled = !drawingState.isDrawing
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Clear all annotations",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+        Column(modifier = Modifier.padding(8.dp)) {
+            Text(
+                text = "DEBUG: Tool=${drawingState.tool.displayName}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Drawing=${drawingState.isDrawing}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Should show colors=${drawingState.tool != DrawingTool.ERASER && drawingState.tool != DrawingTool.PAN_ZOOM}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+    
+    // Drawing tools
+    if (isVertical) {
+        // Vertical layout - tools in a column
+        Text(
+            text = "Tools",
+            style = MaterialTheme.typography.labelLarge
+        )
+        
+        DrawingTool.values().forEach { tool ->
+            val icon = when (tool) {
+                DrawingTool.PEN -> Icons.Default.Edit
+                DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
+                DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
+                DrawingTool.PAN_ZOOM -> Icons.Default.OpenWith
             }
             
-            if (drawingState.isDrawing) {
-                // Drawing tools
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Tools:",
-                        style = MaterialTheme.typography.labelMedium
+            FilterChip(
+                onClick = {
+                    onDrawingStateChanged(drawingState.copy(tool = tool))
+                },
+                label = { Text(tool.displayName) },
+                selected = drawingState.tool == tool,
+                leadingIcon = {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = tool.displayName
                     )
-                    
-                    DrawingTool.values().forEach { tool ->
-                        val icon = when (tool) {
-                            DrawingTool.PEN -> Icons.Default.Edit
-                            DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
-                            DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
-                        }
-                        
-                        FilterChip(
-                            onClick = {
-                                onDrawingStateChanged(drawingState.copy(tool = tool))
-                            },
-                            label = { Text(tool.displayName) },
-                            selected = drawingState.tool == tool,
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = tool.displayName
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Stroke width in vertical layout
+        Text(
+            text = "Size: ${drawingState.strokeWidth.toInt()}px",
+            style = MaterialTheme.typography.labelMedium
+        )
+        
+        Slider(
+            value = drawingState.strokeWidth,
+            onValueChange = { width ->
+                onDrawingStateChanged(drawingState.copy(strokeWidth = width))
+            },
+            valueRange = 1f..20f,
+            steps = 18,
+            modifier = Modifier.fillMaxWidth()
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Colors in vertical layout
+        if (drawingState.tool != DrawingTool.ERASER && drawingState.tool != DrawingTool.PAN_ZOOM) {
+            Text(
+                text = "Colors",
+                style = MaterialTheme.typography.labelMedium
+            )
+            
+            availableColors.chunked(2).forEach { colorRow ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    colorRow.forEach { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .border(
+                                    width = if (drawingState.color == color) 3.dp else 1.dp,
+                                    color = if (drawingState.color == color) 
+                                        MaterialTheme.colorScheme.primary 
+                                    else 
+                                        MaterialTheme.colorScheme.outline,
+                                    shape = CircleShape
                                 )
-                            }
+                                .clickable {
+                                    onDrawingStateChanged(drawingState.copy(color = color))
+                                }
                         )
                     }
                 }
-                
-                // Stroke width slider
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Size:",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    
-                    Slider(
-                        value = drawingState.strokeWidth,
-                        onValueChange = { width ->
-                            onDrawingStateChanged(drawingState.copy(strokeWidth = width))
-                        },
-                        valueRange = 1f..20f,
-                        steps = 18,
-                        modifier = Modifier.weight(1f)
-                    )
-                    
-                    Text(
-                        text = "${drawingState.strokeWidth.toInt()}px",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+            }
+        }
+    } else {
+        // Horizontal layout - tools in rows
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Tools:",
+                style = MaterialTheme.typography.labelMedium
+            )
+            
+            DrawingTool.values().forEach { tool ->
+                val icon = when (tool) {
+                    DrawingTool.PEN -> Icons.Default.Edit
+                    DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
+                    DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
+                    DrawingTool.PAN_ZOOM -> Icons.Default.OpenWith
                 }
                 
-                // Color palette
-                if (drawingState.tool != DrawingTool.ERASER) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Color:",
-                            style = MaterialTheme.typography.labelMedium
+                FilterChip(
+                    onClick = {
+                        onDrawingStateChanged(drawingState.copy(tool = tool))
+                    },
+                    label = { Text(tool.displayName) },
+                    selected = drawingState.tool == tool,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = tool.displayName
                         )
-                        
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            availableColors.forEach { color ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                        .border(
-                                            width = if (drawingState.color == color) 3.dp else 1.dp,
-                                            color = if (drawingState.color == color) 
-                                                MaterialTheme.colorScheme.primary 
-                                            else 
-                                                MaterialTheme.colorScheme.outline,
-                                            shape = CircleShape
-                                        )
-                                        .clickable {
-                                            onDrawingStateChanged(drawingState.copy(color = color))
-                                        }
+                    }
+                )
+            }
+        }
+        
+        // Stroke width slider
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Size:",
+                style = MaterialTheme.typography.labelMedium
+            )
+            
+            Slider(
+                value = drawingState.strokeWidth,
+                onValueChange = { width ->
+                    onDrawingStateChanged(drawingState.copy(strokeWidth = width))
+                },
+                valueRange = 1f..20f,
+                steps = 18,
+                modifier = Modifier.weight(1f)
+            )
+            
+            Text(
+                text = "${drawingState.strokeWidth.toInt()}px",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        
+        // Color palette
+        if (drawingState.tool != DrawingTool.ERASER && drawingState.tool != DrawingTool.PAN_ZOOM) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Color:",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    availableColors.forEach { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .border(
+                                    width = if (drawingState.color == color) 3.dp else 1.dp,
+                                    color = if (drawingState.color == color) 
+                                        MaterialTheme.colorScheme.primary 
+                                    else 
+                                        MaterialTheme.colorScheme.outline,
+                                    shape = CircleShape
                                 )
-                            }
-                        }
+                                .clickable {
+                                    onDrawingStateChanged(drawingState.copy(color = color))
+                                }
+                        )
                     }
                 }
             }

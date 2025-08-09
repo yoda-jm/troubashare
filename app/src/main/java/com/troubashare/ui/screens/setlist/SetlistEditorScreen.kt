@@ -41,6 +41,7 @@ fun SetlistEditorScreen(
     val setlist by viewModel.setlist.collectAsState()
     val availableSongs by viewModel.availableSongs.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val editMetadataState by viewModel.editMetadataState.collectAsState()
     
     setlist?.let { currentSetlist ->
         Scaffold(
@@ -71,6 +72,16 @@ fun SetlistEditorScreen(
                         }
                     },
                     actions = {
+                        // Edit metadata
+                        IconButton(
+                            onClick = viewModel::showEditMetadataDialog
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit setlist info"
+                            )
+                        }
+                        
                         // Save changes
                         IconButton(
                             onClick = viewModel::saveSetlist,
@@ -223,6 +234,18 @@ fun SetlistEditorScreen(
             CircularProgressIndicator()
         }
     }
+    
+    // Edit Metadata Dialog
+    if (uiState.showEditMetadataDialog) {
+        EditMetadataDialog(
+            state = editMetadataState,
+            onNameChange = viewModel::updateMetadataName,
+            onDescriptionChange = viewModel::updateMetadataDescription,
+            onVenueChange = viewModel::updateMetadataVenue,
+            onSave = viewModel::saveMetadata,
+            onDismiss = viewModel::hideEditMetadataDialog
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -351,4 +374,80 @@ fun AvailableSongItem(
             }
         }
     }
+}
+
+@Composable
+fun EditMetadataDialog(
+    state: EditMetadataUiState,
+    onNameChange: (String) -> Unit,
+    onDescriptionChange: (String) -> Unit,
+    onVenueChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Setlist Info") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = state.name,
+                    onValueChange = onNameChange,
+                    label = { Text("Setlist Name *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = state.errorMessage != null
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = state.venue,
+                    onValueChange = onVenueChange,
+                    label = { Text("Venue") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = state.description,
+                    onValueChange = onDescriptionChange,
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3
+                )
+                
+                state.errorMessage?.let { errorMessage ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onSave,
+                enabled = state.isValid && !state.isSaving
+            ) {
+                if (state.isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Save")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

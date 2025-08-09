@@ -52,8 +52,15 @@ class FileViewerViewModel(
     }
     
     fun toggleDrawingMode() {
+        val newIsDrawing = !_drawingState.value.isDrawing
         _drawingState.value = _drawingState.value.copy(
-            isDrawing = !_drawingState.value.isDrawing
+            isDrawing = newIsDrawing,
+            // When entering drawing mode, default to PEN tool to show colors
+            tool = if (newIsDrawing && _drawingState.value.tool == DrawingTool.PAN_ZOOM) {
+                DrawingTool.PEN
+            } else {
+                _drawingState.value.tool
+            }
         )
     }
     

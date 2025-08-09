@@ -54,6 +54,57 @@ class GroupRepository(private val database: TroubaShareDatabase) {
         return group.toDomainModel(members.map { it.toDomainModel() })
     }
     
+    suspend fun updateGroup(groupId: String, name: String, memberNames: List<String>): Group {
+        val existingGroup = groupDao.getGroupById(groupId) 
+            ?: throw IllegalArgumentException("Group not found")
+        
+        val updatedGroup = existingGroup.copy(
+            name = name,
+            updatedAt = System.currentTimeMillis()
+        )
+        
+        // Update group
+        groupDao.updateGroup(updatedGroup)
+        
+        // Get existing members to preserve their IDs and relationships
+        val existingMembers = groupDao.getMembersByGroupId(groupId)
+        val cleanMemberNames = memberNames.filter { it.isNotBlank() }.map { it.trim() }
+        
+        // Update existing members that still exist
+        val updatedMembers = mutableListOf<MemberEntity>()
+        
+        // Match existing members with new names by order/position
+        existingMembers.zip(cleanMemberNames).forEach { (existingMember, newName) ->
+            val updated = existingMember.copy(name = newName)
+            groupDao.updateMember(updated)
+            updatedMembers.add(updated)
+        }
+        
+        // Remove excess existing members if we have fewer names now
+        if (existingMembers.size > cleanMemberNames.size) {
+            existingMembers.drop(cleanMemberNames.size).forEach { memberToDelete ->
+                groupDao.deleteMember(memberToDelete)
+            }
+        }
+        
+        // Add new members if we have more names than existing members
+        if (cleanMemberNames.size > existingMembers.size) {
+            val newMemberNames = cleanMemberNames.drop(existingMembers.size)
+            newMemberNames.forEach { memberName ->
+                val newMember = MemberEntity(
+                    id = UUID.randomUUID().toString(),
+                    groupId = groupId,
+                    name = memberName,
+                    role = null
+                )
+                groupDao.insertMember(newMember)
+                updatedMembers.add(newMember)
+            }
+        }
+        
+        return updatedGroup.toDomainModel(updatedMembers.map { it.toDomainModel() })
+    }
+    
     suspend fun deleteGroup(group: Group) {
         val entity = GroupEntity(
             id = group.id,

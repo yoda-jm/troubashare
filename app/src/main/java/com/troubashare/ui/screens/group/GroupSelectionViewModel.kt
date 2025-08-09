@@ -16,6 +16,9 @@ class GroupSelectionViewModel(
     
     private val _createGroupState = MutableStateFlow(CreateGroupUiState())
     val createGroupState: StateFlow<CreateGroupUiState> = _createGroupState.asStateFlow()
+    
+    private val _editGroupState = MutableStateFlow(EditGroupUiState())
+    val editGroupState: StateFlow<EditGroupUiState> = _editGroupState.asStateFlow()
 
     val groups = groupRepository.getAllGroups()
         .stateIn(
@@ -32,6 +35,20 @@ class GroupSelectionViewModel(
     fun hideCreateGroupDialog() {
         _uiState.value = _uiState.value.copy(showCreateDialog = false)
         _createGroupState.value = CreateGroupUiState()
+    }
+    
+    fun showEditGroupDialog(group: Group) {
+        _uiState.value = _uiState.value.copy(showEditDialog = true)
+        _editGroupState.value = EditGroupUiState(
+            groupId = group.id,
+            groupName = group.name,
+            members = group.members.map { it.name }
+        )
+    }
+    
+    fun hideEditGroupDialog() {
+        _uiState.value = _uiState.value.copy(showEditDialog = false)
+        _editGroupState.value = EditGroupUiState()
     }
 
     fun updateGroupName(name: String) {
@@ -99,6 +116,69 @@ class GroupSelectionViewModel(
         }
     }
 
+    fun updateEditGroupName(name: String) {
+        _editGroupState.value = _editGroupState.value.copy(
+            groupName = name,
+            errorMessage = null
+        )
+    }
+
+    fun updateEditMemberName(index: Int, name: String) {
+        val updatedMembers = _editGroupState.value.members.toMutableList()
+        if (index < updatedMembers.size) {
+            updatedMembers[index] = name
+        }
+        _editGroupState.value = _editGroupState.value.copy(
+            members = updatedMembers,
+            errorMessage = null
+        )
+    }
+
+    fun addEditMemberField() {
+        val updatedMembers = _editGroupState.value.members + ""
+        _editGroupState.value = _editGroupState.value.copy(
+            members = updatedMembers
+        )
+    }
+
+    fun removeEditMemberField(index: Int) {
+        if (_editGroupState.value.members.size > 1) {
+            val updatedMembers = _editGroupState.value.members.toMutableList()
+            updatedMembers.removeAt(index)
+            _editGroupState.value = _editGroupState.value.copy(
+                members = updatedMembers
+            )
+        }
+    }
+
+    fun updateGroup() {
+        val state = _editGroupState.value
+        if (!state.isValid) {
+            _editGroupState.value = state.copy(
+                errorMessage = "Group name is required"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _editGroupState.value = state.copy(isUpdating = true)
+
+            try {
+                groupRepository.updateGroup(
+                    groupId = state.groupId!!,
+                    name = state.groupName,
+                    memberNames = state.members.filter { it.isNotBlank() }
+                )
+                hideEditGroupDialog()
+            } catch (error: Exception) {
+                _editGroupState.value = _editGroupState.value.copy(
+                    isUpdating = false,
+                    errorMessage = error.message ?: "Failed to update group"
+                )
+            }
+        }
+    }
+
     fun selectGroup(groupId: String) {
         _uiState.value = _uiState.value.copy(selectedGroupId = groupId)
     }
@@ -106,6 +186,7 @@ class GroupSelectionViewModel(
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
         _createGroupState.value = _createGroupState.value.copy(errorMessage = null)
+        _editGroupState.value = _editGroupState.value.copy(errorMessage = null)
     }
 }
 
@@ -113,6 +194,7 @@ data class GroupSelectionUiState(
     val isLoading: Boolean = false,
     val groups: List<Group> = emptyList(),
     val showCreateDialog: Boolean = false,
+    val showEditDialog: Boolean = false,
     val errorMessage: String? = null,
     val selectedGroupId: String? = null
 )
@@ -125,4 +207,15 @@ data class CreateGroupUiState(
 ) {
     val isValid: Boolean
         get() = groupName.isNotBlank()
+}
+
+data class EditGroupUiState(
+    val groupId: String? = null,
+    val groupName: String = "",
+    val members: List<String> = listOf(""),
+    val isUpdating: Boolean = false,
+    val errorMessage: String? = null
+) {
+    val isValid: Boolean
+        get() = groupName.isNotBlank() && groupId != null
 }

@@ -34,7 +34,7 @@ fun SongDetailScreen(
     groupId: String,
     songId: String,
     onNavigateBack: () -> Unit,
-    onViewFile: (SongFile) -> Unit = {},
+    onViewFile: (SongFile, String, String) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -132,7 +132,9 @@ fun SongDetailScreen(
                                             onFileDelete = { file ->
                                                 viewModel.deleteFile(file)
                                             },
-                                            onFileView = onViewFile,
+                                            onFileView = { file ->
+                                                onViewFile(file, currentSong.title, member.name)
+                                            },
                                             isUploading = uiState.isUploading
                                         )
                                         

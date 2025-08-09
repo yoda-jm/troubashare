@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,7 +72,7 @@ fun LibraryScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
@@ -270,7 +271,7 @@ fun SongCard(
                     onClick = { showDeleteDialog = true }
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Info, // Will use Delete icon when available
+                        imageVector = Icons.Default.Delete,
                         contentDescription = "Delete song",
                         tint = MaterialTheme.colorScheme.error
                     )
@@ -412,7 +413,7 @@ fun CreateSongDialog(
                                 selected = false,
                                 trailingIcon = {
                                     Icon(
-                                        imageVector = Icons.Default.Add, // Will use X icon when available
+                                        imageVector = Icons.Filled.Close,
                                         contentDescription = "Remove tag",
                                         modifier = Modifier.size(16.dp)
                                     )

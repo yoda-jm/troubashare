@@ -134,7 +134,7 @@ fun HomeScreen(
                 QuickActionCard(
                     title = stringResource(R.string.nav_settings),
                     description = "App preferences and sync",
-                    icon = Icons.Default.Info,
+                    icon = Icons.Default.Settings,
                     onClick = onNavigateToSettings,
                     modifier = Modifier.weight(1f)
                 )

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.domain.model.Song
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,7 +23,7 @@ class LibraryViewModel(
     private val _createSongState = MutableStateFlow(CreateSongUiState())
     val createSongState: StateFlow<CreateSongUiState> = _createSongState.asStateFlow()
 
-    @OptIn(FlowPreview::class)
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val songs = searchQuery
         .debounce(300)
         .flatMapLatest { query ->

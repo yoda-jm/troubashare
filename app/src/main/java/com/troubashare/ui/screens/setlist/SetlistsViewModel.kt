@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.domain.model.Setlist
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -24,7 +25,7 @@ class SetlistsViewModel(
     private val _createSetlistState = MutableStateFlow(CreateSetlistUiState())
     val createSetlistState: StateFlow<CreateSetlistUiState> = _createSetlistState.asStateFlow()
 
-    @OptIn(FlowPreview::class)
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val setlists = searchQuery
         .debounce(300)
         .flatMapLatest { query ->

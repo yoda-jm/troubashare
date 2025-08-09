@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -120,7 +122,7 @@ fun PDFViewer(
                     onClick = { if (currentPage > 0) currentPage-- },
                     enabled = currentPage > 0 && !isLoading
                 ) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Previous page")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous page")
                 }
                 
                 Text(
@@ -132,7 +134,7 @@ fun PDFViewer(
                     onClick = { if (currentPage < pageCount - 1) currentPage++ },
                     enabled = currentPage < pageCount - 1 && !isLoading
                 ) {
-                    Icon(Icons.Default.ArrowForward, contentDescription = "Next page")
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next page")
                 }
             }
             

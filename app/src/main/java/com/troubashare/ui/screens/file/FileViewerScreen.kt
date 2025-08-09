@@ -48,6 +48,12 @@ fun FileViewerScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { /* TODO: Open annotation mode */ }) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Annotate"
+                        )
+                    }
                     IconButton(onClick = { /* TODO: Share file */ }) {
                         Icon(
                             imageVector = Icons.Default.Share,

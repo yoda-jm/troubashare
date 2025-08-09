@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.troubashare.data.database.dao.GroupDao
 import com.troubashare.data.database.dao.SongDao
 import com.troubashare.data.database.dao.SetlistDao
+import com.troubashare.data.database.dao.AnnotationDao
 import com.troubashare.data.database.entities.*
 
 @Database(
@@ -16,9 +17,12 @@ import com.troubashare.data.database.entities.*
         SongEntity::class,
         SongFileEntity::class,
         SetlistEntity::class,
-        SetlistItemEntity::class
+        SetlistItemEntity::class,
+        AnnotationEntity::class,
+        AnnotationStrokeEntity::class,
+        AnnotationPointEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class TroubaShareDatabase : RoomDatabase() {
@@ -26,6 +30,7 @@ abstract class TroubaShareDatabase : RoomDatabase() {
     abstract fun groupDao(): GroupDao
     abstract fun songDao(): SongDao
     abstract fun setlistDao(): SetlistDao
+    abstract fun annotationDao(): AnnotationDao
     
     companion object {
         const val DATABASE_NAME = "troubashare_database"

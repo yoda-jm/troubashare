@@ -350,8 +350,9 @@ fun PDFContent(
                                         detectTransformGestures { _, pan, zoom, _ ->
                                             val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
                                             currentScale = newScale
-                                            currentOffsetX += pan.x
-                                            currentOffsetY += pan.y
+                                            // Adjust pan sensitivity based on current scale for more natural feel
+                                            currentOffsetX += pan.x * currentScale
+                                            currentOffsetY += pan.y * currentScale
                                         }
                                     }.pointerInput(Unit) {
                                         detectTapGestures(
@@ -393,8 +394,9 @@ fun PDFContent(
                             onZoomGesture = { zoom, pan ->
                                 val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
                                 currentScale = newScale
-                                currentOffsetX += pan.x
-                                currentOffsetY += pan.y
+                                // Adjust pan sensitivity based on current scale for more natural feel
+                                currentOffsetX += pan.x * currentScale
+                                currentOffsetY += pan.y * currentScale
                             },
                             onDoubleTap = { tapOffset, canvasSize ->
                                 if (currentScale > 1f) {
@@ -517,7 +519,7 @@ fun AnnotationOverlay(
                 if (stroke.points.isNotEmpty()) {
                     val path = createPathFromPoints(stroke.points)
                     val strokeColor = try {
-                        androidx.compose.ui.graphics.Color(stroke.color.toULong())
+                        androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
                     } catch (e: Exception) {
                         androidx.compose.ui.graphics.Color.Black // Fallback to black
                     }

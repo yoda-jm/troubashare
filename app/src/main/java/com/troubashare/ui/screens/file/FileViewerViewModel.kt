@@ -103,7 +103,7 @@ class FileViewerViewModel(
                         timestamp = System.currentTimeMillis()
                     )
                 ),
-                color = _drawingState.value.color.value.toLong(),
+                color = _drawingState.value.color.toArgb().toUInt().toLong(),
                 strokeWidth = _drawingState.value.strokeWidth,
                 tool = DrawingTool.TEXT,
                 text = text,

@@ -17,7 +17,7 @@ data class Annotation(
 data class AnnotationStroke(
     val id: String,
     val points: List<AnnotationPoint>,
-    val color: Long = Color.Black.value.toLong(), // Changed default to black
+    val color: Long = Color.Black.toArgb().toUInt().toLong(), // Changed default to black
     val strokeWidth: Float = 5f, // Increased default stroke width
     val tool: DrawingTool = DrawingTool.PEN,
     val text: String? = null, // For TEXT tool annotations

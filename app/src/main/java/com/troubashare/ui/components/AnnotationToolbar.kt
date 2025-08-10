@@ -440,7 +440,7 @@ fun AnnotationListItem(
                             .size(16.dp)
                             .background(
                                 try {
-                                    androidx.compose.ui.graphics.Color(stroke.color.toULong())
+                                    androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
                                 } catch (e: Exception) {
                                     androidx.compose.ui.graphics.Color.Black
                                 },
@@ -530,7 +530,7 @@ fun SelectableAnnotationListItem(
                                 .size(16.dp)
                                 .background(
                                     try {
-                                        androidx.compose.ui.graphics.Color(stroke.color.toULong())
+                                        androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
                                     } catch (e: Exception) {
                                         androidx.compose.ui.graphics.Color.Black
                                     },

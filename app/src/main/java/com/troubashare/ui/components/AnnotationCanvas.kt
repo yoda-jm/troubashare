@@ -109,7 +109,7 @@ fun AnnotationCanvas(
                                     val stroke = AnnotationStroke(
                                         id = UUID.randomUUID().toString(),
                                         points = currentPoints,
-                                        color = drawingState.color.value.toLong(),
+                                        color = drawingState.color.toArgb().toUInt().toLong(),
                                         strokeWidth = drawingState.strokeWidth,
                                         tool = drawingState.tool,
                                         createdAt = System.currentTimeMillis()
@@ -198,7 +198,7 @@ fun AnnotationCanvas(
             if (stroke.points.isNotEmpty()) {
                 val path = createPathFromPoints(stroke.points)
                 val strokeColor = try {
-                    Color(stroke.color.toULong())
+                    Color(stroke.color.toUInt().toInt())
                 } catch (e: Exception) {
                     Color.Black // Fallback to black instead of red
                 }

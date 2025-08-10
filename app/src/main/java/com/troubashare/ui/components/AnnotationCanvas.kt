@@ -62,7 +62,7 @@ fun AnnotationCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(drawingState.tool, drawingState.isDrawing) {
+            .pointerInput(drawingState.tool, drawingState.isDrawing, drawingState.color, drawingState.strokeWidth) {
                 when (drawingState.tool) {
                     DrawingTool.TEXT -> {
                         // Handle text annotation placement
@@ -235,7 +235,7 @@ fun AnnotationCanvas(
                                 path = path,
                                 color = Color.Blue.copy(alpha = 0.3f),
                                 style = Stroke(
-                                    width = (stroke.strokeWidth * 2f) + 8f,
+                                    width = (stroke.strokeWidth * 1.3f) + 8f,
                                     cap = StrokeCap.Round,
                                     join = StrokeJoin.Round
                                 )
@@ -246,7 +246,7 @@ fun AnnotationCanvas(
                             path = path,
                             color = strokeColor.copy(alpha = 0.5f),
                             style = Stroke(
-                                width = stroke.strokeWidth * 2f,
+                                width = stroke.strokeWidth * 1.3f,
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
@@ -286,16 +286,14 @@ fun AnnotationCanvas(
                         stroke.text?.let { text ->
                             if (stroke.points.isNotEmpty()) {
                                 val position = stroke.points.first()
-                                // Ensure text is visible with better size and color handling
-                                val textColor = if (strokeColor == Color.White || strokeColor.alpha < 0.5f) {
-                                    Color.Black // Use black for better visibility if original color is white or transparent
-                                } else {
-                                    strokeColor
-                                }
+                                // Use black color for maximum visibility in drawing mode too
+                                val textColor = Color.Black
+                                
+                                // Ensure minimum readable size
+                                val fontSize = maxOf(stroke.strokeWidth * 3, 18f).sp
                                 
                                 // Draw selection highlight background for text
                                 if (isSelected) {
-                                    val fontSize = if (stroke.strokeWidth * 3 >= 14f) (stroke.strokeWidth * 3).sp else 14.sp
                                     val textWidth = text.length * fontSize.value * 0.6f // Approximate text width
                                     val textHeight = fontSize.value * 1.2f
                                     
@@ -312,7 +310,7 @@ fun AnnotationCanvas(
                                     topLeft = Offset(position.x, position.y),
                                     style = TextStyle(
                                         color = textColor,
-                                        fontSize = if (stroke.strokeWidth * 3 >= 14f) (stroke.strokeWidth * 3).sp else 14.sp // Minimum readable size
+                                        fontSize = fontSize
                                     )
                                 )
                             }
@@ -346,7 +344,7 @@ fun AnnotationCanvas(
                         path = path,
                         color = strokeColor.copy(alpha = 0.5f),
                         style = Stroke(
-                            width = drawingState.strokeWidth * 2f,
+                            width = drawingState.strokeWidth * 1.3f,
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )

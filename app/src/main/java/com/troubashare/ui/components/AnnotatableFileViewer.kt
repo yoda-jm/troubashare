@@ -541,7 +541,7 @@ fun AnnotationOverlay(
                                 path = path,
                                 color = strokeColor.copy(alpha = 0.5f),
                                 style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                    width = stroke.strokeWidth * 2f,
+                                    width = stroke.strokeWidth * 1.3f,
                                     cap = androidx.compose.ui.graphics.StrokeCap.Round,
                                     join = androidx.compose.ui.graphics.StrokeJoin.Round
                                 )
@@ -562,24 +562,26 @@ fun AnnotationOverlay(
                             // SELECT tool doesn't create strokes
                         }
                         com.troubashare.domain.model.DrawingTool.TEXT -> {
-                            // Draw text annotation
+                            // Draw text annotation - ensure it's always visible
                             stroke.text?.let { text ->
-                                val position = stroke.points.first()
-                                // Ensure text is visible with better size and color handling
-                                val textColor = if (strokeColor == androidx.compose.ui.graphics.Color.White || strokeColor.alpha < 0.5f) {
-                                    androidx.compose.ui.graphics.Color.Black // Use black for better visibility
-                                } else {
-                                    strokeColor
-                                }
-                                drawText(
-                                    textMeasurer = textMeasurer,
-                                    text = text,
-                                    topLeft = androidx.compose.ui.geometry.Offset(position.x, position.y),
-                                    style = androidx.compose.ui.text.TextStyle(
-                                        color = textColor,
-                                        fontSize = if (stroke.strokeWidth * 3 >= 14f) (stroke.strokeWidth * 3).sp else 14.sp // Minimum readable size
+                                if (stroke.points.isNotEmpty()) {
+                                    val position = stroke.points.first()
+                                    // Use black color for maximum visibility, regardless of original color
+                                    val textColor = androidx.compose.ui.graphics.Color.Black
+                                    
+                                    // Ensure minimum readable size
+                                    val fontSize = maxOf(stroke.strokeWidth * 3, 18f).sp
+                                    
+                                    drawText(
+                                        textMeasurer = textMeasurer,
+                                        text = text,
+                                        topLeft = androidx.compose.ui.geometry.Offset(position.x, position.y),
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            color = textColor,
+                                            fontSize = fontSize
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                         com.troubashare.domain.model.DrawingTool.PAN_ZOOM -> {

@@ -300,7 +300,7 @@ class FileViewerViewModel(
                             val paint = Paint().apply {
                                 color = stroke.color.toInt()
                                 alpha = 128 // 50% transparency
-                                strokeWidth = stroke.strokeWidth * 2f
+                                strokeWidth = stroke.strokeWidth * 1.3f
                                 style = Paint.Style.STROKE
                                 strokeCap = Paint.Cap.ROUND
                                 strokeJoin = Paint.Join.ROUND
@@ -311,13 +311,15 @@ class FileViewerViewModel(
                         }
                         DrawingTool.TEXT -> {
                             stroke.text?.let { text ->
-                                val position = stroke.points.first()
-                                val paint = Paint().apply {
-                                    color = stroke.color.toInt()
-                                    textSize = maxOf(stroke.strokeWidth * 3, 14f)
-                                    isAntiAlias = true
+                                if (stroke.points.isNotEmpty()) {
+                                    val position = stroke.points.first()
+                                    val paint = Paint().apply {
+                                        color = android.graphics.Color.BLACK // Use black for maximum visibility in PDF
+                                        textSize = maxOf(stroke.strokeWidth * 3, 18f) // Minimum readable size
+                                        isAntiAlias = true
+                                    }
+                                    canvas.drawText(text, position.x, position.y, paint)
                                 }
-                                canvas.drawText(text, position.x, position.y, paint)
                             }
                         }
                         else -> { /* Other tools not saved to PDF */ }

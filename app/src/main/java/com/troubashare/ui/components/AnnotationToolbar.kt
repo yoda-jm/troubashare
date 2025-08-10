@@ -63,9 +63,11 @@ fun AnnotationToolbar(
                 )
             }
         } else {
-            // Horizontal layout for portrait mode
+            // Horizontal layout for portrait mode with fixed height to prevent layout shifts
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .padding(16.dp)
+                    .height(160.dp), // Fixed height to prevent layout shifts
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 ToolbarContent(
@@ -211,17 +213,29 @@ private fun ToolbarContent(
                                 .clip(CircleShape)
                                 .background(color)
                                 .border(
-                                    width = if (drawingState.color == color) 3.dp else 1.dp,
+                                    width = if (drawingState.color == color) 4.dp else 2.dp,
                                     color = if (drawingState.color == color) 
                                         MaterialTheme.colorScheme.primary 
                                     else 
-                                        MaterialTheme.colorScheme.outline,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
                                     shape = CircleShape
                                 )
                                 .clickable {
                                     onDrawingStateChanged(drawingState.copy(color = color))
                                 }
-                        )
+                        ) {
+                            // Add checkmark for selected color for better visibility
+                            if (drawingState.color == color) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = if (color == Color.White || color == Color.Yellow) Color.Black else Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -315,17 +329,29 @@ private fun ToolbarContent(
                                 .clip(CircleShape)
                                 .background(color)
                                 .border(
-                                    width = if (drawingState.color == color) 3.dp else 1.dp,
+                                    width = if (drawingState.color == color) 3.dp else 2.dp,
                                     color = if (drawingState.color == color) 
                                         MaterialTheme.colorScheme.primary 
                                     else 
-                                        MaterialTheme.colorScheme.outline,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
                                     shape = CircleShape
                                 )
                                 .clickable {
                                     onDrawingStateChanged(drawingState.copy(color = color))
                                 }
-                        )
+                        ) {
+                            // Add checkmark for selected color for better visibility
+                            if (drawingState.color == color) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = if (color == Color.White || color == Color.Yellow) Color.Black else Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

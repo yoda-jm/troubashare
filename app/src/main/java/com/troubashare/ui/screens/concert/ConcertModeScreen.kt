@@ -3,6 +3,8 @@ package com.troubashare.ui.screens.concert
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.clickable
@@ -71,16 +73,34 @@ fun ConcertModeScreen(
     val window = (view.context as ComponentActivity).window
     
     DisposableEffect(Unit) {
-        // Hide system UI (status bar, navigation bar, action bar)
+        // Hide system UI completely for true fullscreen
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        
+        // Enable edge-to-edge mode
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val windowInsetsController = WindowCompat.getInsetsController(window, view)
-        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+        
+        // Hide all system bars and ensure they stay hidden
+        windowInsetsController.hide(
+            WindowInsetsCompat.Type.statusBars() or 
+            WindowInsetsCompat.Type.navigationBars() or
+            WindowInsetsCompat.Type.displayCutout() or
+            WindowInsetsCompat.Type.systemGestures()
+        )
         windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        
+        // Also hide action bar if present
+        (view.context as? ComponentActivity)?.actionBar?.hide()
         
         onDispose {
             // Restore system UI when leaving concert mode
             WindowCompat.setDecorFitsSystemWindows(window, true)
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            windowInsetsController.show(
+                WindowInsetsCompat.Type.statusBars() or 
+                WindowInsetsCompat.Type.navigationBars()
+            )
+            (view.context as? ComponentActivity)?.actionBar?.show()
         }
     }
     
@@ -244,41 +264,40 @@ fun ConcertModeScreen(
             }
         }
         
-        // Top overlay with song title, position, and menu button
+        // Top overlay with song title, position, and menu button - positioned to avoid system UI
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .align(Alignment.TopCenter),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Menu button to open drawer
-            IconButton(
+            FloatingActionButton(
                 onClick = {
                     scope.launch { drawerState.open() }
                 },
-                modifier = Modifier
-                    .background(
-                        Color.Black.copy(alpha = 0.7f),
-                        MaterialTheme.shapes.small
-                    )
+                modifier = Modifier.size(56.dp),
+                containerColor = Color.Black.copy(alpha = 0.8f),
+                contentColor = Color.White
             ) {
                 Icon(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Song list",
-                    tint = Color.White
+                    modifier = Modifier.size(24.dp)
                 )
             }
             
             // Song title and position
             Surface(
-                color = Color.Black.copy(alpha = 0.7f),
+                color = Color.Black.copy(alpha = 0.8f),
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.weight(1f).padding(horizontal = 16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     if (uiState.currentSongIndex >= 0 && uiState.currentSongIndex < uiState.songs.size) {
@@ -293,72 +312,69 @@ fun ConcertModeScreen(
                     }
                     Text(
                         text = "${uiState.currentSongIndex + 1} of ${uiState.totalSongs}",
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = Color.White.copy(alpha = 0.9f),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
             
             // Exit button
-            IconButton(
+            FloatingActionButton(
                 onClick = onNavigateBack,
-                modifier = Modifier
-                    .background(
-                        Color.Black.copy(alpha = 0.7f),
-                        MaterialTheme.shapes.small
-                    )
+                modifier = Modifier.size(56.dp),
+                containerColor = Color.Red.copy(alpha = 0.8f),
+                contentColor = Color.White
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Exit concert mode",
-                    tint = Color.White
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
         
-        // Bottom navigation bar - more prominent
+        // Bottom navigation bar - more prominent and positioned properly
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Previous song button
-            IconButton(
+            FloatingActionButton(
                 onClick = viewModel::previousSong,
-                enabled = uiState.currentSongIndex > 0,
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(
-                        Color.Black.copy(alpha = 0.8f),
-                        MaterialTheme.shapes.medium
-                    )
+                modifier = Modifier.size(64.dp),
+                containerColor = if (uiState.currentSongIndex > 0) {
+                    Color.Black.copy(alpha = 0.8f)
+                } else {
+                    Color.Gray.copy(alpha = 0.5f)
+                },
+                contentColor = Color.White
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipPrevious,
                     contentDescription = "Previous song",
-                    tint = if (uiState.currentSongIndex > 0) Color.White else Color.Gray,
                     modifier = Modifier.size(32.dp)
                 )
             }
             
             // Next song button
-            IconButton(
+            FloatingActionButton(
                 onClick = viewModel::nextSong,
-                enabled = uiState.currentSongIndex < uiState.totalSongs - 1,
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(
-                        Color.Black.copy(alpha = 0.8f),
-                        MaterialTheme.shapes.medium
-                    )
+                modifier = Modifier.size(64.dp),
+                containerColor = if (uiState.currentSongIndex < uiState.totalSongs - 1) {
+                    Color.Black.copy(alpha = 0.8f)
+                } else {
+                    Color.Gray.copy(alpha = 0.5f)
+                },
+                contentColor = Color.White
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = "Next song",
-                    tint = if (uiState.currentSongIndex < uiState.totalSongs - 1) Color.White else Color.Gray,
                     modifier = Modifier.size(32.dp)
                 )
             }

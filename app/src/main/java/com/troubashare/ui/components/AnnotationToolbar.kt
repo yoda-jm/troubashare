@@ -63,12 +63,12 @@ fun AnnotationToolbar(
                 )
             }
         } else {
-            // Horizontal layout for portrait mode with fixed height to prevent layout shifts
+            // Horizontal layout for portrait mode with minimal height since tools moved to FAB
             Column(
                 modifier = Modifier
                     .padding(16.dp)
-                    .height(160.dp), // Fixed height to prevent layout shifts
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .height(90.dp), // Minimal height - only color and size controls
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ToolbarContent(
                     drawingState = drawingState,
@@ -102,79 +102,9 @@ private fun ToolbarContent(
         Color.Black
     )
     
-    // Drawing tools
+    // Drawing tools section removed - now handled by expandable FAB
+    
     if (isVertical) {
-        // Vertical layout - tools in a column
-        // Tool selector dropdown
-        var expanded by remember { mutableStateOf(false) }
-        
-        Text(
-            text = "Tool",
-            style = MaterialTheme.typography.labelLarge
-        )
-        
-        Box(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(drawingState.tool.displayName)
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                        contentDescription = "Dropdown"
-                    )
-                }
-            }
-            
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                DrawingTool.values().forEach { tool ->
-                    val icon = when (tool) {
-                        DrawingTool.PEN -> Icons.Default.Edit
-                        DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
-                        DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
-                        DrawingTool.TEXT -> Icons.Default.TextFields
-                        DrawingTool.SELECT -> Icons.Default.TouchApp
-                        DrawingTool.PAN_ZOOM -> Icons.Default.OpenWith
-                    }
-                    
-                    DropdownMenuItem(
-                        text = { 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = tool.displayName,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(tool.displayName)
-                            }
-                        },
-                        onClick = {
-                            // Keep drawing mode active when changing tools within drawing mode
-                            onDrawingStateChanged(
-                                drawingState.copy(tool = tool)
-                            )
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
         // Stroke width in vertical layout (not shown for PAN_ZOOM tool)
         if (drawingState.tool != DrawingTool.PAN_ZOOM) {
             Text(
@@ -241,44 +171,7 @@ private fun ToolbarContent(
             }
         }
     } else {
-        // Horizontal layout - tools in rows
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Tools:",
-                style = MaterialTheme.typography.labelMedium
-            )
-            
-            DrawingTool.values().forEach { tool ->
-                val icon = when (tool) {
-                    DrawingTool.PEN -> Icons.Default.Edit
-                    DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
-                    DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
-                    DrawingTool.TEXT -> Icons.Default.TextFields
-                    DrawingTool.SELECT -> Icons.Default.TouchApp
-                    DrawingTool.PAN_ZOOM -> Icons.Default.OpenWith
-                }
-                
-                FilterChip(
-                    onClick = {
-                        // Keep drawing mode active when changing tools within drawing mode
-                        onDrawingStateChanged(
-                            drawingState.copy(tool = tool)
-                        )
-                    },
-                    label = { Text(tool.displayName) },
-                    selected = drawingState.tool == tool,
-                    leadingIcon = {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = tool.displayName
-                        )
-                    }
-                )
-            }
-        }
+        // Horizontal layout - no tool selection since it's handled by FAB
         
         // Stroke width slider (not shown for PAN_ZOOM tool)
         if (drawingState.tool != DrawingTool.PAN_ZOOM) {

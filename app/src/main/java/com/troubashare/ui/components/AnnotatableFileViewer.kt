@@ -261,17 +261,35 @@ fun AnnotatablePDFViewer(
                     modifier = Modifier.fillMaxSize()
                 )
                 
-                // Floating action button to toggle drawing mode
-                FloatingActionButton(
-                    onClick = viewModel::toggleDrawingMode,
+                // Drawing mode toggle and tools FAB
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(16.dp)
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Icon(
-                        imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
-                        contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
-                    )
+                    // Expandable tools FAB (only when in drawing mode)
+                    if (drawingState.isDrawing) {
+                        ExpandableToolsFab(
+                            drawingState = drawingState,
+                            onDrawingStateChanged = viewModel::updateDrawingState
+                        )
+                    }
+                    
+                    // Main drawing mode toggle FAB
+                    FloatingActionButton(
+                        onClick = viewModel::toggleDrawingMode,
+                        containerColor = if (drawingState.isDrawing)
+                            MaterialTheme.colorScheme.secondary
+                        else
+                            MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(
+                            imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
+                            contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
+                        )
+                    }
                 }
             }
         }
@@ -433,17 +451,35 @@ fun PDFContent(
                         )
                     }
                     
-                    // Floating action button to toggle drawing mode
-                    FloatingActionButton(
-                        onClick = viewModel::toggleDrawingMode,
+                    // Drawing mode toggle and tools FAB
+                    Column(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(16.dp)
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Icon(
-                            imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
-                            contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
-                        )
+                        // Expandable tools FAB (only when in drawing mode)
+                        if (drawingState.isDrawing) {
+                            ExpandableToolsFab(
+                                drawingState = drawingState,
+                                onDrawingStateChanged = viewModel::updateDrawingState
+                            )
+                        }
+                        
+                        // Main drawing mode toggle FAB
+                        FloatingActionButton(
+                            onClick = viewModel::toggleDrawingMode,
+                            containerColor = if (drawingState.isDrawing)
+                                MaterialTheme.colorScheme.secondary
+                            else
+                                MaterialTheme.colorScheme.primary
+                        ) {
+                            Icon(
+                                imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
+                                contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
+                            )
+                        }
                     }
                 }
             }

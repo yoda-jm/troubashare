@@ -23,6 +23,12 @@ class SongDetailViewModel(
     val uiState: StateFlow<SongDetailUiState> = _uiState.asStateFlow()
 
     val song: StateFlow<Song?> = songRepository.getSongByIdFlow(songId)
+        .onEach { song ->
+            println("DEBUG SongDetailViewModel: Received song update - ${song?.title}, files count: ${song?.files?.size}")
+            song?.files?.forEachIndexed { index, file ->
+                println("DEBUG SongDetailViewModel: File $index - id='${file.id}', songId='${file.songId}', fileName='${file.fileName}'")
+            }
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -51,6 +57,7 @@ class SongDetailViewModel(
                     return@launch
                 }
                 
+                println("DEBUG SongDetailViewModel: Uploading file '$fileName' for songId='$songId', memberId='$memberId'")
                 val result = songRepository.addFileToSong(
                     songId = songId,
                     memberId = memberId,
@@ -61,9 +68,12 @@ class SongDetailViewModel(
                 inputStream.close()
                 
                 if (result.isSuccess) {
+                    val createdFile = result.getOrNull()
+                    println("DEBUG SongDetailViewModel: File upload SUCCESS - fileId='${createdFile?.id}', songId='${createdFile?.songId}', fileName='${createdFile?.fileName}'")
                     _uiState.value = _uiState.value.copy(isUploading = false)
                     // Song data will automatically refresh through reactive Flow
                 } else {
+                    println("DEBUG SongDetailViewModel: File upload FAILED - ${result.exceptionOrNull()?.message}")
                     _uiState.value = _uiState.value.copy(
                         isUploading = false,
                         errorMessage = result.exceptionOrNull()?.message ?: "Failed to upload file"

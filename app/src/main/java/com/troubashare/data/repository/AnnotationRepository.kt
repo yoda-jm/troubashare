@@ -19,9 +19,12 @@ class AnnotationRepository(
     
     fun getAnnotationsByFileAndMember(fileId: String, memberId: String): Flow<List<Annotation>> {
         return annotationDao.getAnnotationsByFileAndMember(fileId, memberId).map { entities ->
+            // Use runBlocking or better yet, restructure to use suspend context
             entities.map { entity ->
-                val strokes = getStrokesForAnnotation(entity.id)
-                entity.toDomainModel(strokes)
+                kotlinx.coroutines.runBlocking {
+                    val strokes = getStrokesForAnnotation(entity.id)
+                    entity.toDomainModel(strokes)
+                }
             }
         }
     }
@@ -38,6 +41,8 @@ class AnnotationRepository(
         val annotationId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         
+        println("DEBUG AnnotationRepository: Creating annotation with fileId='$fileId', memberId='$memberId', pageNumber=$pageNumber")
+        
         val entity = AnnotationEntity(
             id = annotationId,
             fileId = fileId,
@@ -47,8 +52,14 @@ class AnnotationRepository(
             updatedAt = now
         )
         
-        annotationDao.insertAnnotation(entity)
-        return entity.toDomainModel(emptyList())
+        try {
+            annotationDao.insertAnnotation(entity)
+            println("DEBUG AnnotationRepository: Successfully created annotation with id='$annotationId'")
+            return entity.toDomainModel(emptyList())
+        } catch (e: Exception) {
+            println("DEBUG AnnotationRepository: Failed to create annotation - ${e.message}")
+            throw e
+        }
     }
     
     suspend fun addStrokeToAnnotation(annotationId: String, stroke: AnnotationStroke): AnnotationStroke {

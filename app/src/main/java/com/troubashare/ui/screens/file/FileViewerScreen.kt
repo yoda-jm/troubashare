@@ -17,6 +17,8 @@ import com.troubashare.ui.components.AnnotatableFileViewer
 import com.troubashare.domain.model.SongFile
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.repository.AnnotationRepository
+import com.troubashare.data.repository.SongRepository
+import com.troubashare.data.file.FileManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,16 +29,33 @@ fun FileViewerScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // For now, using a placeholder member ID. In a real implementation, 
-    // this would come from the current user's member ID
-    val currentMemberId = "current-member-id"
+    // Use the file's member ID - this represents the member who owns this specific file
+    // For annotation purposes, we should use the file owner's member ID
+    val currentMemberId = songFile.memberId.ifBlank { 
+        println("DEBUG FileViewerScreen: WARNING - songFile.memberId is blank, using fallback")
+        "unknown-member" 
+    }
+    
+    // DEBUG: Log member ID being used
+    println("DEBUG FileViewerScreen: Using memberId: '$currentMemberId' (from songFile.memberId='${songFile.memberId}')")
     
     val context = LocalContext.current
     val database = remember { TroubaShareDatabase.getInstance(context) }
+    val fileManager = remember { FileManager(context) }
     val annotationRepository = remember { AnnotationRepository(database) }
+    val songRepository = remember { SongRepository(database, fileManager) }
     
     val viewModel: FileViewerViewModel = viewModel { 
-        FileViewerViewModel(annotationRepository, songFile.id, currentMemberId) 
+        println("DEBUG FileViewerScreen: Creating ViewModel with fileId='${songFile.id}', memberId='$currentMemberId', songId='${songFile.songId}'")
+        println("DEBUG FileViewerScreen: SongFile details - fileName='${songFile.fileName}', filePath='${songFile.filePath}'")
+        FileViewerViewModel(
+            annotationRepository = annotationRepository,
+            songRepository = songRepository,
+            fileId = songFile.id,
+            memberId = currentMemberId,
+            songId = songFile.songId,
+            filePath = songFile.filePath
+        ) 
     }
     
     val uiState by viewModel.uiState.collectAsState()
@@ -84,10 +103,31 @@ fun FileViewerScreen(
                 .padding(paddingValues)
         )
         
-        // Show error message if any
-        uiState.errorMessage?.let { errorMessage ->
-            LaunchedEffect(errorMessage) {
-                // You could show a snackbar here
+        // Show error/success message if any
+        uiState.errorMessage?.let { message ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (message.contains("success", ignoreCase = true)) 
+                        MaterialTheme.colorScheme.primaryContainer
+                    else 
+                        MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(16.dp),
+                    color = if (message.contains("success", ignoreCase = true))
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    else 
+                        MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            
+            LaunchedEffect(message) {
+                kotlinx.coroutines.delay(3000)
                 viewModel.clearError()
             }
         }

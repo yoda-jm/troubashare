@@ -40,6 +40,14 @@ import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.file.FileManager
 
+/**
+ * IMPORTANT: ConcertModeScreen is READ-ONLY for performance viewing.
+ * 
+ * NO ANNOTATION EDITING should be implemented here - this is pure read-only display.
+ * All annotation management (save, edit, toggle) belongs in the song editing interface (SongDetailScreen).
+ * 
+ * Concert mode uses basic FileViewer, not AnnotatableFileViewer.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConcertModeScreen(

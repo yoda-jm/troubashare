@@ -17,17 +17,85 @@ import kotlinx.coroutines.withContext
 import java.util.*
 import java.io.File
 import java.io.FileOutputStream
+import java.io.ByteArrayInputStream
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.pdf.PdfDocument
+import com.google.gson.Gson
+import com.troubashare.data.repository.SongRepository
 
 class FileViewerViewModel(
     private val annotationRepository: AnnotationRepository,
+    private val songRepository: SongRepository,
     private val fileId: String,
-    private val memberId: String
+    private val memberId: String,
+    private val songId: String,
+    private val filePath: String = ""
 ) : ViewModel() {
+    
+    // Store the resolved file ID, member ID, and song ID once we look them up
+    private var resolvedFileId: String? = null
+    private var resolvedMemberId: String? = null
+    private var resolvedSongId: String? = null
+    
+    // Get the effective file ID, preferring resolved ID over original
+    private fun getEffectiveFileId(): String {
+        return when {
+            resolvedFileId != null -> {
+                println("DEBUG FileViewerViewModel: Using resolved fileId: '$resolvedFileId'")
+                resolvedFileId!!
+            }
+            fileId.isNotBlank() -> {
+                println("DEBUG FileViewerViewModel: Using original fileId: '$fileId'")
+                fileId
+            }
+            else -> {
+                // Use a hash of the file path as a fallback
+                val pathHash = filePath.hashCode().toString().replace("-", "n")
+                val fallbackId = "path-$pathHash"
+                println("DEBUG FileViewerViewModel: Using fallback path-based ID: '$fallbackId'")
+                fallbackId
+            }
+        }
+    }
+    
+    // Get the effective member ID, preferring resolved ID over original
+    private fun getEffectiveMemberId(): String {
+        return when {
+            resolvedMemberId != null -> {
+                println("DEBUG FileViewerViewModel: Using resolved memberId: '$resolvedMemberId'")
+                resolvedMemberId!!
+            }
+            memberId.isNotBlank() && memberId != "current-member-id" && memberId != "unknown-member" -> {
+                println("DEBUG FileViewerViewModel: Using original memberId: '$memberId'")
+                memberId
+            }
+            else -> {
+                println("DEBUG FileViewerViewModel: WARNING - No valid memberId available, using fallback")
+                "fallback-member"
+            }
+        }
+    }
+    
+    // Get the effective song ID, preferring resolved ID over original
+    private fun getEffectiveSongId(): String {
+        return when {
+            resolvedSongId != null -> {
+                println("DEBUG FileViewerViewModel: Using resolved songId: '$resolvedSongId'")
+                resolvedSongId!!
+            }
+            songId.isNotBlank() -> {
+                println("DEBUG FileViewerViewModel: Using original songId: '$songId'")
+                songId
+            }
+            else -> {
+                println("DEBUG FileViewerViewModel: WARNING - No valid songId available, using empty")
+                ""
+            }
+        }
+    }
     
     private val _uiState = MutableStateFlow(FileViewerUiState())
     val uiState: StateFlow<FileViewerUiState> = _uiState.asStateFlow()
@@ -46,7 +114,8 @@ class FileViewerViewModel(
         _annotations,
         _currentPage
     ) { annotationList, page ->
-        annotationList.filter { it.pageNumber == page }
+        val effectiveMemberId = getEffectiveMemberId()
+        annotationList.filter { it.pageNumber == page && it.memberId == effectiveMemberId }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -54,7 +123,54 @@ class FileViewerViewModel(
     )
     
     init {
-        loadAnnotations()
+        // First try to resolve the actual file ID from database if needed
+        if (fileId.isBlank() && filePath.isNotBlank()) {
+            resolveFileIdFromPath()
+        } else {
+            loadAnnotations()
+        }
+    }
+    
+    private fun resolveFileIdFromPath() {
+        viewModelScope.launch {
+            try {
+                println("DEBUG: Attempting to resolve file ID from path: '$filePath'")
+                // Extract songId from the file path if possible
+                // Path format: .../songs/{songId}/members/{memberId}/filename
+                val pathSegments = filePath.split("/")
+                val songsIndex = pathSegments.indexOf("songs")
+                if (songsIndex != -1 && songsIndex + 1 < pathSegments.size) {
+                    val extractedSongId = pathSegments[songsIndex + 1]
+                    println("DEBUG: Extracted songId from path: '$extractedSongId'")
+                    
+                    // Get the song and find the file with matching path
+                    val song = songRepository.getSongById(extractedSongId)
+                    val matchingFile = song?.files?.find { it.filePath == filePath }
+                    
+                    if (matchingFile != null) {
+                        println("DEBUG: Found matching file in database - id='${matchingFile.id}', songId='${matchingFile.songId}', memberId='${matchingFile.memberId}'")
+                        resolvedFileId = matchingFile.id
+                        resolvedSongId = matchingFile.songId
+                        // Also store the correct member ID if the passed one is invalid
+                        if (memberId.isBlank() || memberId == "current-member-id" || memberId == "unknown-member") {
+                            resolvedMemberId = matchingFile.memberId
+                            println("DEBUG: Resolved memberId from database: '${matchingFile.memberId}' (original was '$memberId')")
+                        }
+                        println("DEBUG: Resolved songId from database: '${matchingFile.songId}' (original was '$songId')")
+                    } else {
+                        println("DEBUG: No matching file found in database for path: '$filePath'")
+                    }
+                }
+                
+                // Now load annotations with the resolved ID
+                loadAnnotations()
+                
+            } catch (e: Exception) {
+                println("DEBUG: Error resolving file ID from path: ${e.message}")
+                // Fall back to loading with path-based ID
+                loadAnnotations()
+            }
+        }
     }
     
     fun setCurrentPage(page: Int) {
@@ -122,29 +238,37 @@ class FileViewerViewModel(
     fun addStroke(stroke: AnnotationStroke) {
         viewModelScope.launch {
             try {
+                println("DEBUG: Adding stroke with ${stroke.points.size} points, tool: ${stroke.tool}")
                 _uiState.value = _uiState.value.copy(isLoading = true)
                 
                 // Find or create annotation for current page
                 val currentPageValue = _currentPage.value
+                val effectiveMemberId = getEffectiveMemberId()
                 var annotation = _annotations.value.find { 
-                    it.pageNumber == currentPageValue && it.memberId == memberId 
+                    it.pageNumber == currentPageValue && it.memberId == effectiveMemberId 
                 }
                 
                 if (annotation == null) {
+                    println("DEBUG: Creating new annotation for page $currentPageValue")
                     annotation = annotationRepository.createAnnotation(
-                        fileId = fileId,
-                        memberId = memberId,
+                        fileId = getEffectiveFileId(),
+                        memberId = getEffectiveMemberId(),
                         pageNumber = currentPageValue
                     )
+                    println("DEBUG: Created annotation with ID: ${annotation.id}")
                 }
                 
                 // Add stroke to annotation
+                println("DEBUG: Adding stroke ${stroke.id} to annotation ${annotation.id}")
                 annotationRepository.addStrokeToAnnotation(annotation.id, stroke)
                 
                 // Reload annotations to get updated state
                 loadAnnotations()
+                println("DEBUG: Stroke added successfully")
                 
             } catch (e: Exception) {
+                println("DEBUG: Error adding stroke: ${e.message}")
+                e.printStackTrace()
                 _uiState.value = _uiState.value.copy(
                     errorMessage = "Failed to add annotation: ${e.message}"
                 )
@@ -160,8 +284,9 @@ class FileViewerViewModel(
                 _uiState.value = _uiState.value.copy(isLoading = true)
                 
                 val currentPageValue = _currentPage.value
+                val effectiveMemberId = getEffectiveMemberId()
                 val pageAnnotations = _annotations.value.filter { 
-                    it.pageNumber == currentPageValue && it.memberId == memberId 
+                    it.pageNumber == currentPageValue && it.memberId == effectiveMemberId 
                 }
                 
                 pageAnnotations.forEach { annotationItem ->
@@ -341,14 +466,119 @@ class FileViewerViewModel(
         return path
     }
     
+    fun saveAnnotationLayer() {
+        viewModelScope.launch {
+            try {
+                println("DEBUG: Starting to save annotation layer...")
+                _uiState.value = _uiState.value.copy(isLoading = true)
+                
+                // Force reload annotations to ensure we have the latest data
+                println("DEBUG: Reloading annotations to ensure fresh data...")
+                loadAnnotations()
+                kotlinx.coroutines.delay(100) // Small delay to ensure flow updates
+                
+                val annotations = _annotations.value
+                println("DEBUG: Found ${annotations.size} annotations to save")
+                
+                // Debug each annotation
+                annotations.forEachIndexed { index, annotation ->
+                    println("DEBUG: Annotation $index - ID: ${annotation.id}, Page: ${annotation.pageNumber}, Strokes: ${annotation.strokes.size}")
+                    annotation.strokes.forEachIndexed { strokeIndex, stroke ->
+                        println("DEBUG:   Stroke $strokeIndex - Tool: ${stroke.tool}, Points: ${stroke.points.size}")
+                    }
+                }
+                
+                // Also count total strokes across all annotations for better feedback
+                val totalStrokes = annotations.sumOf { it.strokes.size }
+                println("DEBUG: Total strokes: $totalStrokes")
+                
+                if (annotations.isEmpty() || totalStrokes == 0) {
+                    println("DEBUG: No annotations to save - checking if we have unsaved drawing state")
+                    println("DEBUG: Current drawing state - isDrawing: ${_drawingState.value.isDrawing}, tool: ${_drawingState.value.tool}")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "No annotations found to save. Make sure you've drawn something and it has been saved to the database. Try drawing something, then waiting a moment before saving."
+                    )
+                    return@launch
+                }
+                
+                // Create annotation layer JSON
+                val gson = Gson()
+                val annotationData = mapOf(
+                    "fileId" to getEffectiveFileId(),
+                    "originalFileId" to fileId, // Keep track of original (possibly empty) fileId
+                    "memberId" to getEffectiveMemberId(),
+                    "annotations" to annotations,
+                    "createdAt" to System.currentTimeMillis(),
+                    "version" to "1.0"
+                )
+                val jsonContent = gson.toJson(annotationData)
+                
+                // Create filename for annotation layer with effective fileId reference
+                val fileName = "annotations_${getEffectiveFileId()}_${getEffectiveMemberId()}_${System.currentTimeMillis()}.json"
+                println("DEBUG: Saving annotation file: $fileName")
+                println("DEBUG: JSON content length: ${jsonContent.length}")
+                
+                // Save as SongFile with ANNOTATION type
+                val effectiveSongId = getEffectiveSongId()
+                if (effectiveSongId.isBlank()) {
+                    println("DEBUG: songId is empty - will save annotations to database but cannot create annotation file")
+                    // Still save the annotation data to database using the path-based fileId
+                    // But cannot create the JSON file without songId
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "✅ SUCCESS: Annotations saved to database ($totalStrokes strokes) but cannot export file (missing song link). Try re-uploading the PDF."
+                    )
+                    return@launch
+                }
+                
+                val result = songRepository.addFileToSong(
+                    songId = effectiveSongId,
+                    memberId = getEffectiveMemberId(),
+                    fileName = fileName,
+                    inputStream = ByteArrayInputStream(jsonContent.toByteArray())
+                )
+                
+                println("DEBUG: Save result: ${if (result.isSuccess) "SUCCESS" else "FAILED: ${result.exceptionOrNull()?.message}"}")
+                
+                if (result.isSuccess) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "✅ SUCCESS: Annotation layer saved as $fileName with $totalStrokes strokes"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "Failed to save annotation layer: ${result.exceptionOrNull()?.message}"
+                    )
+                }
+                
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Failed to save annotation layer: ${e.message}"
+                )
+            }
+        }
+    }
+    
     private fun loadAnnotations() {
         viewModelScope.launch {
             try {
-                annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
+                val currentEffectiveFileId = getEffectiveFileId()
+                val currentEffectiveMemberId = getEffectiveMemberId()
+                println("DEBUG: Loading annotations for original fileId: '$fileId', effective fileId: '$currentEffectiveFileId', original memberId: '$memberId', effective memberId: '$currentEffectiveMemberId'")
+                annotationRepository.getAnnotationsByFileAndMember(currentEffectiveFileId, currentEffectiveMemberId)
                     .collect { annotationList ->
+                        println("DEBUG: Loaded ${annotationList.size} annotations from database")
+                        annotationList.forEachIndexed { index, annotation ->
+                            println("DEBUG: Annotation $index - ID: ${annotation.id}, Strokes: ${annotation.strokes.size}")
+                        }
                         _annotations.value = annotationList
                     }
             } catch (e: Exception) {
+                println("DEBUG: Error loading annotations: ${e.message}")
+                e.printStackTrace()
                 _uiState.value = _uiState.value.copy(
                     errorMessage = "Failed to load annotations: ${e.message}"
                 )

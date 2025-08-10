@@ -269,6 +269,22 @@ fun AnnotatablePDFViewer(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // Save annotation layer FAB (when in drawing mode - always show to enable saving)
+                    if (drawingState.isDrawing) {
+                        FloatingActionButton(
+                            onClick = {
+                                viewModel.saveAnnotationLayer()
+                            },
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                            contentColor = MaterialTheme.colorScheme.onTertiary
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Save,
+                                contentDescription = "Save Annotation Layer"
+                            )
+                        }
+                    }
+                    
                     // Expandable tools FAB (only when in drawing mode)
                     if (drawingState.isDrawing) {
                         ExpandableToolsFab(
@@ -438,8 +454,21 @@ fun PDFContent(
                         )
                     } else {
                         // Show annotations overlay when not in drawing mode
+                        // Calculate toolbar offset - annotations were drawn with toolbar present in landscape
+                        val configuration = LocalConfiguration.current
+                        val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                        val toolbarOffsetX = if (isLandscape) {
+                            val offsetPx = 220f * LocalContext.current.resources.displayMetrics.density // Convert 220.dp to pixels
+                            println("DEBUG AnnotationOverlay: Landscape mode - applying toolbar offset: ${offsetPx}px")
+                            offsetPx
+                        } else {
+                            println("DEBUG AnnotationOverlay: Portrait mode - no toolbar offset")
+                            0f
+                        }
+                        
                         AnnotationOverlay(
                             annotations = annotations,
+                            toolbarOffsetX = toolbarOffsetX,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer(
@@ -459,6 +488,22 @@ fun PDFContent(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Save annotation layer FAB (when in drawing mode - always show to enable saving)
+                        if (drawingState.isDrawing) {
+                            FloatingActionButton(
+                                onClick = {
+                                    viewModel.saveAnnotationLayer()
+                                },
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                                contentColor = MaterialTheme.colorScheme.onTertiary
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Save,
+                                    contentDescription = "Save Annotation Layer"
+                                )
+                            }
+                        }
+                        
                         // Expandable tools FAB (only when in drawing mode)
                         if (drawingState.isDrawing) {
                             ExpandableToolsFab(
@@ -542,7 +587,8 @@ fun TextInputDialog(
 @Composable
 fun AnnotationOverlay(
     annotations: List<com.troubashare.domain.model.Annotation>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    toolbarOffsetX: Float = 0f // Offset to account for toolbar in drawing mode
 ) {
     val textMeasurer = rememberTextMeasurer()
     
@@ -553,7 +599,23 @@ fun AnnotationOverlay(
         annotations.forEach { annotationItem ->
             annotationItem.strokes.forEach { stroke ->
                 if (stroke.points.isNotEmpty()) {
-                    val path = createPathFromPoints(stroke.points)
+                    // Adjust points by toolbar offset if needed
+                    // When viewing without toolbar, annotations need to be shifted LEFT by toolbar width
+                    // because they were drawn with toolbar present (content was shifted right)
+                    val adjustedPoints = if (toolbarOffsetX != 0f) {
+                        val originalFirstPoint = stroke.points.firstOrNull()
+                        val adjusted = stroke.points.map { point ->
+                            point.copy(x = point.x - toolbarOffsetX)
+                        }
+                        val adjustedFirstPoint = adjusted.firstOrNull()
+                        if (originalFirstPoint != null && adjustedFirstPoint != null) {
+                            println("DEBUG AnnotationOverlay: Point adjustment - original: (${originalFirstPoint.x}, ${originalFirstPoint.y}) -> adjusted: (${adjustedFirstPoint.x}, ${adjustedFirstPoint.y}), offset: $toolbarOffsetX")
+                        }
+                        adjusted
+                    } else {
+                        stroke.points
+                    }
+                    val path = createPathFromPoints(adjustedPoints)
                     val strokeColor = try {
                         androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
                     } catch (e: Exception) {
@@ -600,8 +662,8 @@ fun AnnotationOverlay(
                         com.troubashare.domain.model.DrawingTool.TEXT -> {
                             // Draw text annotation - ensure it's always visible
                             stroke.text?.let { text ->
-                                if (stroke.points.isNotEmpty()) {
-                                    val position = stroke.points.first()
+                                if (adjustedPoints.isNotEmpty()) {
+                                    val position = adjustedPoints.first()
                                     // Use black color for maximum visibility, regardless of original color
                                     val textColor = androidx.compose.ui.graphics.Color.Black
                                     

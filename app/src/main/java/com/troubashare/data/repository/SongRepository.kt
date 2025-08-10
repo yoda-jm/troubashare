@@ -52,6 +52,10 @@ class SongRepository(
             songDao.getSongByIdFlow(id),
             songDao.getFilesBySongIdFlow(id)
         ) { songEntity, fileEntities ->
+            println("DEBUG SongRepository: Loading song '$id' - found ${fileEntities.size} file entities")
+            fileEntities.forEachIndexed { index, fileEntity ->
+                println("DEBUG SongRepository: File $index - id='${fileEntity.id}', fileName='${fileEntity.fileName}', songId='${fileEntity.songId}'")
+            }
             songEntity?.let { entity ->
                 entity.toDomainModel(fileEntities.map { it.toDomainModel() })
             }
@@ -155,8 +159,13 @@ class SongRepository(
         inputStream: InputStream
     ): Result<SongFile> {
         return try {
+            println("DEBUG SongRepository: addFileToSong called - songId='$songId', memberId='$memberId', fileName='$fileName'")
             val song = songDao.getSongById(songId)
-                ?: return Result.failure(Exception("Song not found"))
+            if (song == null) {
+                println("DEBUG SongRepository: Song not found for songId='$songId'")
+                return Result.failure(Exception("Song not found"))
+            }
+            println("DEBUG SongRepository: Found song - id='${song.id}', title='${song.title}', groupId='${song.groupId}'")
             
             // Save file to storage
             val result = fileManager.saveFile(
@@ -175,6 +184,7 @@ class SongRepository(
             val fileType = when {
                 fileManager.isPdfFile(fileName) -> FileType.PDF
                 fileManager.isImageFile(fileName) -> FileType.IMAGE
+                fileName.endsWith(".json", ignoreCase = true) -> FileType.ANNOTATION
                 else -> return Result.failure(Exception("Unsupported file type"))
             }
             
@@ -191,20 +201,29 @@ class SongRepository(
                 createdAt = now
             )
             
+            println("DEBUG SongRepository: Inserting SongFileEntity - id='${entity.id}', songId='${entity.songId}', fileName='${entity.fileName}'")
             songDao.insertSongFile(entity)
-            Result.success(entity.toDomainModel())
+            val domainModel = entity.toDomainModel()
+            println("DEBUG SongRepository: Created domain model - id='${domainModel.id}', songId='${domainModel.songId}', fileName='${domainModel.fileName}'")
+            Result.success(domainModel)
         } catch (e: Exception) {
+            println("DEBUG SongRepository: Error in addFileToSong - ${e.message}")
+            e.printStackTrace()
             Result.failure(e)
         }
     }
     
     suspend fun removeFileFromSong(songFile: SongFile): Result<Unit> {
         return try {
+            println("DEBUG SongRepository: Deleting file - id='${songFile.id}', fileName='${songFile.fileName}', filePath='${songFile.filePath}'")
+            
             // Delete file from storage
             val deleteResult = fileManager.deleteFile(songFile.filePath)
             if (deleteResult.isFailure) {
+                println("DEBUG SongRepository: Failed to delete file from storage: ${deleteResult.exceptionOrNull()?.message}")
                 return Result.failure(deleteResult.exceptionOrNull() ?: Exception("Failed to delete file"))
             }
+            println("DEBUG SongRepository: Successfully deleted file from storage")
             
             // Remove from database
             val entity = SongFileEntity(
@@ -218,8 +237,11 @@ class SongRepository(
             )
             
             songDao.deleteSongFile(entity)
+            println("DEBUG SongRepository: Successfully deleted file from database")
             Result.success(Unit)
         } catch (e: Exception) {
+            println("DEBUG SongRepository: Error deleting file: ${e.message}")
+            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -255,7 +277,7 @@ private fun SongEntity.toDomainModel(files: List<SongFile>): Song {
 }
 
 private fun SongFileEntity.toDomainModel(): SongFile {
-    return SongFile(
+    val domainModel = SongFile(
         id = id,
         songId = songId,
         memberId = memberId,
@@ -264,4 +286,6 @@ private fun SongFileEntity.toDomainModel(): SongFile {
         fileName = fileName,
         createdAt = createdAt
     )
+    println("DEBUG SongRepository: Converting entity to domain - entityId='$id', domainId='${domainModel.id}', fileName='$fileName'")
+    return domainModel
 }

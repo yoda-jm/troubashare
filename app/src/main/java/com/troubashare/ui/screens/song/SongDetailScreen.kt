@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -124,9 +125,14 @@ fun SongDetailScreen(
                                     
                                     // Member selection and file upload
                                     group.members.forEach { member ->
+                                        val memberFiles = currentSong.files.filter { it.memberId == member.id }
+                                        println("DEBUG SongDetailScreen: Member '${member.name}' (${member.id}) files: ${memberFiles.size}")
+                                        memberFiles.forEachIndexed { index, file ->
+                                            println("DEBUG SongDetailScreen: Member file $index - id='${file.id}', songId='${file.songId}', fileName='${file.fileName}', memberId='${file.memberId}'")
+                                        }
                                         MemberFileSection(
                                             member = member,
-                                            files = currentSong.files.filter { it.memberId == member.id },
+                                            files = memberFiles,
                                             onFileUpload = { uri, fileName ->
                                                 viewModel.uploadFile(member.id, fileName, uri, context)
                                             },
@@ -134,6 +140,7 @@ fun SongDetailScreen(
                                                 viewModel.deleteFile(file)
                                             },
                                             onFileView = { file ->
+                                                println("DEBUG SongDetailScreen: Navigating to file - id='${file.id}', songId='${file.songId}', fileName='${file.fileName}'")
                                                 onViewFile(file, currentSong.title, member.name)
                                             },
                                             isUploading = uiState.isUploading
@@ -272,6 +279,7 @@ fun MemberFileSection(
     isUploading: Boolean,
     modifier: Modifier = Modifier
 ) {
+    var showAnnotations by remember { mutableStateOf(true) }
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -283,10 +291,38 @@ fun MemberFileSection(
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            Text(
-                text = member.name,
-                style = MaterialTheme.typography.titleSmall
-            )
+            // Member name and annotation toggle
+            val hasAnnotations = files.any { it.fileType == com.troubashare.domain.model.FileType.ANNOTATION }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = member.name,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                
+                // Annotation visibility toggle (only show if there are annotations)
+                if (hasAnnotations) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Show annotations",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = showAnnotations,
+                            onCheckedChange = { showAnnotations = it },
+                            modifier = Modifier.scale(0.8f)
+                        )
+                    }
+                }
+            }
             
             Spacer(modifier = Modifier.height(8.dp))
             
@@ -310,11 +346,17 @@ fun MemberFileSection(
             }
             
             // Display uploaded files
-            if (files.isNotEmpty()) {
+            val displayFiles = files.filter { file ->
+                // Show all non-annotation files, and annotation files only if toggle is enabled
+                file.fileType != com.troubashare.domain.model.FileType.ANNOTATION || showAnnotations
+            }
+            
+            if (displayFiles.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                files.forEach { file ->
+                displayFiles.forEach { file ->
                     FileItem(
                         file = file,
+                        allFiles = files, // Pass all member files to check for annotations
                         onDelete = { onFileDelete(file) },
                         onView = { onFileView(file) }
                     )
@@ -328,10 +370,34 @@ fun MemberFileSection(
 @Composable
 fun FileItem(
     file: SongFile,
+    allFiles: List<SongFile> = emptyList(), // All files to check for annotation layers
     onDelete: () -> Unit,
     onView: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // State for annotation visibility in concert mode (per file)
+    var showAnnotationsInConcert by remember { mutableStateOf(true) }
+    // DEBUG: Log annotation files for debugging  
+    val annotationFiles = allFiles.filter { it.fileType == com.troubashare.domain.model.FileType.ANNOTATION }
+    if (annotationFiles.isNotEmpty()) {
+        println("DEBUG FileItem: Found ${annotationFiles.size} annotation files for file '${file.fileName}' (ID: '${file.id}')")
+        annotationFiles.forEach { annotationFile ->
+            println("DEBUG FileItem: - Annotation file: '${annotationFile.fileName}' (ID: '${annotationFile.id}')")
+        }
+    }
+    
+    // Check if this file has associated annotation layers
+    // Try multiple identification patterns since navigation can cause ID inconsistencies  
+    val hasAnnotations = allFiles.any { annotationFile ->
+        annotationFile.fileType == com.troubashare.domain.model.FileType.ANNOTATION && (
+            // Pattern 1: Direct file ID match (when file ID is available)
+            (file.id.isNotBlank() && annotationFile.fileName.contains("annotations_${file.id}_")) ||
+            // Pattern 2: For now, assume any annotation file in the song belongs to this file
+            // (This is a simple assumption that works when there's only one main file per song)
+            annotationFile.fileName.startsWith("annotations_")
+        )
+    }
+    
     Card(
         onClick = onView,
         modifier = modifier.fillMaxWidth()
@@ -342,8 +408,13 @@ fun FileItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // File type icon
             Icon(
-                imageVector = if (file.fileType.name == "PDF") Icons.Default.Star else Icons.Default.Add,
+                imageVector = when (file.fileType) {
+                    com.troubashare.domain.model.FileType.PDF -> Icons.Default.PictureAsPdf
+                    com.troubashare.domain.model.FileType.IMAGE -> Icons.Default.Image
+                    com.troubashare.domain.model.FileType.ANNOTATION -> Icons.Default.Edit
+                },
                 contentDescription = file.fileType.name,
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -352,17 +423,72 @@ fun FileItem(
             Spacer(modifier = Modifier.width(8.dp))
             
             Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = file.fileName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    // Annotation layer indicator
+                    if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Draw,
+                            contentDescription = "Has annotation layer",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+                
+                // DEBUG: Show fileId to help identify which file is which
                 Text(
-                    text = file.fileName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = "ID: ${file.id.take(8)}...",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
                 )
-                Text(
-                    text = file.fileType.name,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = file.fileType.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                        Text(
+                            text = " • Annotated",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+            }
+            
+            // Concert mode annotation toggle (only for files that have annotations)
+            if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Concert",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = showAnnotationsInConcert,
+                        onCheckedChange = { showAnnotationsInConcert = it },
+                        modifier = Modifier.scale(0.7f)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
             }
             
             IconButton(onClick = onDelete) {

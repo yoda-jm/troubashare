@@ -69,27 +69,7 @@ fun FileViewerScreen(
                         )
                     }
                 },
-                actions = {
-                    // Drawing toggle button - directly toggle drawing mode
-                    IconButton(
-                        onClick = { 
-                            viewModel.toggleDrawingMode()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = if (drawingState.isDrawing) Icons.Default.Edit else Icons.Default.Visibility,
-                            contentDescription = if (drawingState.isDrawing) "Drawing mode - tap to view only" else "View mode - tap to draw",
-                            tint = if (drawingState.isDrawing) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                        )
-                    }
-                    
-                    IconButton(onClick = { /* TODO: Share file */ }) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share"
-                        )
-                    }
-                }
+                // Removed actions - using FAB for drawing mode toggle
             )
         }
     ) { paddingValues ->

@@ -156,7 +156,10 @@ fun AnnotatablePDFViewer(
                         isVertical = true,
                         modifier = Modifier.fillMaxHeight(),
                         annotations = annotations,
-                        onDeleteStroke = viewModel::deleteStroke
+                        onDeleteStroke = viewModel::deleteStroke,
+                        onSaveAnnotations = {
+                            // TODO: Implement save logic with file picker
+                        }
                     )
                 }
             }
@@ -227,7 +230,10 @@ fun AnnotatablePDFViewer(
                     onDrawingStateChanged = viewModel::updateDrawingState,
                     isVertical = false,
                     annotations = annotations,
-                    onDeleteStroke = viewModel::deleteStroke
+                    onDeleteStroke = viewModel::deleteStroke,
+                    onSaveAnnotations = {
+                        // TODO: Implement save logic with file picker
+                    }
                 )
             }
             
@@ -254,6 +260,19 @@ fun AnnotatablePDFViewer(
                     viewModel = viewModel,
                     modifier = Modifier.fillMaxSize()
                 )
+                
+                // Floating action button to toggle drawing mode
+                FloatingActionButton(
+                    onClick = viewModel::toggleDrawingMode,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                ) {
+                    Icon(
+                        imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
+                        contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
+                    )
+                }
             }
         }
     }
@@ -314,12 +333,7 @@ fun PDFContent(
                 }
                 
                 Box(modifier = Modifier.fillMaxSize()) {
-                    // PDF base layer with zoom gestures - only active when not drawing with pen/highlighter
-                    val enableZoom = !drawingState.isDrawing || 
-                                   drawingState.tool == DrawingTool.PAN_ZOOM || 
-                                   drawingState.tool == DrawingTool.SELECT ||
-                                   drawingState.tool == DrawingTool.TEXT
-                    
+                    // PDF base layer with zoom/pan gestures when not drawing
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -329,33 +343,34 @@ fun PDFContent(
                                 translationX = currentOffsetX,
                                 translationY = currentOffsetY
                             )
-                            .let { modifier ->
-                                if (enableZoom) {
-                                    modifier
-                                        .pointerInput("zoom") {
-                                            detectTransformGestures { _, pan, zoom, _ ->
-                                                val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
-                                                currentScale = newScale
-                                                currentOffsetX += pan.x
-                                                currentOffsetY += pan.y
-                                            }
+                            .let { baseModifier ->
+                                if (!drawingState.isDrawing) {
+                                    // Add zoom/pan gestures when not in drawing mode
+                                    baseModifier.pointerInput(Unit) {
+                                        detectTransformGestures { _, pan, zoom, _ ->
+                                            val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
+                                            currentScale = newScale
+                                            currentOffsetX += pan.x
+                                            currentOffsetY += pan.y
                                         }
-                                        .pointerInput("doubletap") {
-                                            detectTapGestures(
-                                                onDoubleTap = { tapOffset ->
-                                                    if (currentScale > 1f) {
-                                                        currentScale = 1f
-                                                        currentOffsetX = 0f
-                                                        currentOffsetY = 0f
-                                                    } else {
-                                                        currentScale = 2f
-                                                        currentOffsetX = (size.width / 2f - tapOffset.x) * (currentScale - 1f)
-                                                        currentOffsetY = (size.height / 2f - tapOffset.y) * (currentScale - 1f)
-                                                    }
+                                    }.pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onDoubleTap = { tapOffset ->
+                                                if (currentScale > 1f) {
+                                                    currentScale = 1f
+                                                    currentOffsetX = 0f
+                                                    currentOffsetY = 0f
+                                                } else {
+                                                    currentScale = 2f
+                                                    currentOffsetX = (size.width / 2f - tapOffset.x) * (currentScale - 1f)
+                                                    currentOffsetY = (size.height / 2f - tapOffset.y) * (currentScale - 1f)
                                                 }
-                                            )
-                                        }
-                                } else modifier
+                                            }
+                                        )
+                                    }
+                                } else {
+                                    baseModifier
+                                }
                             }
                     ) {
                         // Display PDF bitmap
@@ -366,7 +381,7 @@ fun PDFContent(
                         )
                     }
                     
-                    // Annotation layer with same transform as background 
+                    // Annotation layer only when drawing mode is active
                     if (drawingState.isDrawing) {
                         AnnotationCanvas(
                             backgroundBitmap = null,
@@ -374,6 +389,24 @@ fun PDFContent(
                             drawingState = drawingState,
                             onStrokeAdded = viewModel::addStroke,
                             onDrawingStateChanged = viewModel::updateDrawingState,
+                            onStrokeUpdated = viewModel::updateStroke,
+                            onZoomGesture = { zoom, pan ->
+                                val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
+                                currentScale = newScale
+                                currentOffsetX += pan.x
+                                currentOffsetY += pan.y
+                            },
+                            onDoubleTap = { tapOffset, canvasSize ->
+                                if (currentScale > 1f) {
+                                    currentScale = 1f
+                                    currentOffsetX = 0f
+                                    currentOffsetY = 0f
+                                } else {
+                                    currentScale = 2f
+                                    currentOffsetX = (canvasSize.width / 2f - tapOffset.x) * (currentScale - 1f)
+                                    currentOffsetY = (canvasSize.height / 2f - tapOffset.y) * (currentScale - 1f)
+                                }
+                            },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer(
@@ -384,7 +417,7 @@ fun PDFContent(
                                 )
                         )
                     } else {
-                        // Show existing annotations (read-only)
+                        // Show annotations overlay when not in drawing mode
                         AnnotationOverlay(
                             annotations = annotations,
                             modifier = Modifier
@@ -395,6 +428,19 @@ fun PDFContent(
                                     translationX = currentOffsetX,
                                     translationY = currentOffsetY
                                 )
+                        )
+                    }
+                    
+                    // Floating action button to toggle drawing mode
+                    FloatingActionButton(
+                        onClick = viewModel::toggleDrawingMode,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
+                            contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
                         )
                     }
                 }
@@ -473,7 +519,7 @@ fun AnnotationOverlay(
                     val strokeColor = try {
                         androidx.compose.ui.graphics.Color(stroke.color.toULong())
                     } catch (e: Exception) {
-                        androidx.compose.ui.graphics.Color.Red // Fallback color
+                        androidx.compose.ui.graphics.Color.Black // Fallback to black
                     }
                     
                     when (stroke.tool) {
@@ -517,13 +563,19 @@ fun AnnotationOverlay(
                             // Draw text annotation
                             stroke.text?.let { text ->
                                 val position = stroke.points.first()
+                                // Ensure text is visible with better size and color handling
+                                val textColor = if (strokeColor == androidx.compose.ui.graphics.Color.White || strokeColor.alpha < 0.5f) {
+                                    androidx.compose.ui.graphics.Color.Black // Use black for better visibility
+                                } else {
+                                    strokeColor
+                                }
                                 drawText(
                                     textMeasurer = textMeasurer,
                                     text = text,
                                     topLeft = androidx.compose.ui.geometry.Offset(position.x, position.y),
                                     style = androidx.compose.ui.text.TextStyle(
-                                        color = strokeColor,
-                                        fontSize = (stroke.strokeWidth * 4).sp
+                                        color = textColor,
+                                        fontSize = if (stroke.strokeWidth * 3 >= 14f) (stroke.strokeWidth * 3).sp else 14.sp // Minimum readable size
                                     )
                                 )
                             }
@@ -582,7 +634,12 @@ fun AnnotatableImageViewer(
         // Annotation Toolbar
         AnnotationToolbar(
             drawingState = drawingState,
-            onDrawingStateChanged = viewModel::updateDrawingState
+            onDrawingStateChanged = viewModel::updateDrawingState,
+            annotations = annotations,
+            onDeleteStroke = viewModel::deleteStroke,
+            onSaveAnnotations = {
+                // TODO: Implement save logic with file picker
+            }
         )
         
         // Image Content with Annotations
@@ -615,6 +672,7 @@ fun AnnotatableImageViewer(
                         drawingState = drawingState,
                         onStrokeAdded = viewModel::addStroke,
                         onDrawingStateChanged = viewModel::updateDrawingState,
+                        onStrokeUpdated = viewModel::updateStroke,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

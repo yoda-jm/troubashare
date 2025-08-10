@@ -30,7 +30,8 @@ fun AnnotationToolbar(
     isVertical: Boolean = false,
     modifier: Modifier = Modifier,
     annotations: List<com.troubashare.domain.model.Annotation> = emptyList(),
-    onDeleteStroke: ((com.troubashare.domain.model.AnnotationStroke) -> Unit)? = null
+    onDeleteStroke: ((com.troubashare.domain.model.AnnotationStroke) -> Unit)? = null,
+    onSaveAnnotations: (() -> Unit)? = null
 ) {
     Surface(
         modifier = if (isVertical) 
@@ -57,7 +58,8 @@ fun AnnotationToolbar(
                     onDrawingStateChanged = onDrawingStateChanged,
                     isVertical = true,
                     annotations = annotations,
-                    onDeleteStroke = onDeleteStroke
+                    onDeleteStroke = onDeleteStroke,
+                    onSaveAnnotations = onSaveAnnotations
                 )
             }
         } else {
@@ -71,7 +73,8 @@ fun AnnotationToolbar(
                     onDrawingStateChanged = onDrawingStateChanged,
                     isVertical = false,
                     annotations = annotations,
-                    onDeleteStroke = onDeleteStroke
+                    onDeleteStroke = onDeleteStroke,
+                    onSaveAnnotations = onSaveAnnotations
                 )
             }
         }
@@ -84,7 +87,8 @@ private fun ToolbarContent(
     onDrawingStateChanged: (DrawingState) -> Unit,
     isVertical: Boolean,
     annotations: List<com.troubashare.domain.model.Annotation> = emptyList(),
-    onDeleteStroke: ((com.troubashare.domain.model.AnnotationStroke) -> Unit)? = null
+    onDeleteStroke: ((com.troubashare.domain.model.AnnotationStroke) -> Unit)? = null,
+    onSaveAnnotations: (() -> Unit)? = null
 ) {
     val availableColors = listOf(
         Color.Red,
@@ -156,7 +160,10 @@ private fun ToolbarContent(
                             }
                         },
                         onClick = {
-                            onDrawingStateChanged(drawingState.copy(tool = tool))
+                            // Keep drawing mode active when changing tools within drawing mode
+                            onDrawingStateChanged(
+                                drawingState.copy(tool = tool)
+                            )
                             expanded = false
                         }
                     )
@@ -166,23 +173,25 @@ private fun ToolbarContent(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Stroke width in vertical layout
-        Text(
-            text = "Size: ${drawingState.strokeWidth.toInt()}px",
-            style = MaterialTheme.typography.labelMedium
-        )
-        
-        Slider(
-            value = drawingState.strokeWidth,
-            onValueChange = { width ->
-                onDrawingStateChanged(drawingState.copy(strokeWidth = width))
-            },
-            valueRange = 1f..20f,
-            steps = 18,
-            modifier = Modifier.fillMaxWidth()
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
+        // Stroke width in vertical layout (not shown for PAN_ZOOM tool)
+        if (drawingState.tool != DrawingTool.PAN_ZOOM) {
+            Text(
+                text = "Size: ${drawingState.strokeWidth.toInt()}px",
+                style = MaterialTheme.typography.labelMedium
+            )
+            
+            Slider(
+                value = drawingState.strokeWidth,
+                onValueChange = { width ->
+                    onDrawingStateChanged(drawingState.copy(strokeWidth = width))
+                },
+                valueRange = 1f..20f,
+                steps = 18,
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
         
         // Colors in vertical layout
         if (drawingState.tool == DrawingTool.PEN || drawingState.tool == DrawingTool.HIGHLIGHTER || drawingState.tool == DrawingTool.TEXT) {
@@ -240,7 +249,10 @@ private fun ToolbarContent(
                 
                 FilterChip(
                     onClick = {
-                        onDrawingStateChanged(drawingState.copy(tool = tool))
+                        // Keep drawing mode active when changing tools within drawing mode
+                        onDrawingStateChanged(
+                            drawingState.copy(tool = tool)
+                        )
                     },
                     label = { Text(tool.displayName) },
                     selected = drawingState.tool == tool,
@@ -254,30 +266,32 @@ private fun ToolbarContent(
             }
         }
         
-        // Stroke width slider
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Size:",
-                style = MaterialTheme.typography.labelMedium
-            )
-            
-            Slider(
-                value = drawingState.strokeWidth,
-                onValueChange = { width ->
-                    onDrawingStateChanged(drawingState.copy(strokeWidth = width))
-                },
-                valueRange = 1f..20f,
-                steps = 18,
-                modifier = Modifier.weight(1f)
-            )
-            
-            Text(
-                text = "${drawingState.strokeWidth.toInt()}px",
-                style = MaterialTheme.typography.bodySmall
-            )
+        // Stroke width slider (not shown for PAN_ZOOM tool)
+        if (drawingState.tool != DrawingTool.PAN_ZOOM) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Size:",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                
+                Slider(
+                    value = drawingState.strokeWidth,
+                    onValueChange = { width ->
+                        onDrawingStateChanged(drawingState.copy(strokeWidth = width))
+                    },
+                    valueRange = 1f..20f,
+                    steps = 18,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                Text(
+                    text = "${drawingState.strokeWidth.toInt()}px",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
         
         // Color palette
@@ -321,25 +335,71 @@ private fun ToolbarContent(
         if (drawingState.tool == DrawingTool.SELECT && onDeleteStroke != null) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             
-            Text(
-                text = "Annotations",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Select Annotations",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                
+                if (drawingState.selectedStroke != null) {
+                    TextButton(
+                        onClick = {
+                            onDrawingStateChanged(drawingState.copy(selectedStroke = null))
+                        }
+                    ) {
+                        Text("Clear Selection")
+                    }
+                }
+            }
             
             val allStrokes = annotations.flatMap { annotation -> 
                 annotation.strokes.map { stroke -> annotation to stroke }
             }
             
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 200.dp)
-            ) {
-                items(allStrokes) { (annotation, stroke) ->
-                    AnnotationListItem(
-                        stroke = stroke,
-                        onDelete = { onDeleteStroke.invoke(stroke) }
-                    )
+            if (allStrokes.isEmpty()) {
+                Text(
+                    text = "No annotations on this page",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 200.dp)
+                ) {
+                    items(allStrokes) { (annotation, stroke) ->
+                        SelectableAnnotationListItem(
+                            stroke = stroke,
+                            isSelected = drawingState.selectedStroke?.id == stroke.id,
+                            onSelect = { 
+                                onDrawingStateChanged(drawingState.copy(selectedStroke = stroke))
+                            },
+                            onDelete = { onDeleteStroke.invoke(stroke) }
+                        )
+                    }
                 }
+            }
+        }
+        
+        // Save annotations button
+        if (onSaveAnnotations != null && annotations.isNotEmpty()) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            OutlinedButton(
+                onClick = onSaveAnnotations,
+                modifier = if (isVertical) Modifier.fillMaxWidth() else Modifier
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Save,
+                    contentDescription = "Save Annotations",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save as PDF")
             }
         }
     }
@@ -382,7 +442,7 @@ fun AnnotationListItem(
                                 try {
                                     androidx.compose.ui.graphics.Color(stroke.color.toULong())
                                 } catch (e: Exception) {
-                                    androidx.compose.ui.graphics.Color.Red
+                                    androidx.compose.ui.graphics.Color.Black
                                 },
                                 CircleShape
                             )
@@ -393,6 +453,100 @@ fun AnnotationListItem(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+            
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SelectableAnnotationListItem(
+    stroke: com.troubashare.domain.model.AnnotationStroke,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clickable { onSelect() },
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) 
+                MaterialTheme.colorScheme.primaryContainer 
+            else 
+                MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Selection indicator
+                if (isSelected) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Selected",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                
+                Column {
+                    Text(
+                        text = when (stroke.tool) {
+                            DrawingTool.TEXT -> stroke.text ?: "Text annotation"
+                            else -> "${stroke.tool.displayName} stroke"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(
+                                    try {
+                                        androidx.compose.ui.graphics.Color(stroke.color.toULong())
+                                    } catch (e: Exception) {
+                                        androidx.compose.ui.graphics.Color.Black
+                                    },
+                                    CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Size: ${stroke.strokeWidth.toInt()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isSelected) 
+                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             

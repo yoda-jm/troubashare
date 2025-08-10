@@ -17,8 +17,8 @@ data class Annotation(
 data class AnnotationStroke(
     val id: String,
     val points: List<AnnotationPoint>,
-    val color: Long = Color.Red.toArgb().toLong(),
-    val strokeWidth: Float = 3f,
+    val color: Long = Color.Black.value.toLong(), // Changed default to black
+    val strokeWidth: Float = 5f, // Increased default stroke width
     val tool: DrawingTool = DrawingTool.PEN,
     val text: String? = null, // For TEXT tool annotations
     val createdAt: Long = System.currentTimeMillis()
@@ -41,11 +41,12 @@ enum class DrawingTool(val displayName: String) {
 }
 
 data class DrawingState(
-    val tool: DrawingTool = DrawingTool.PEN,
-    val color: Color = Color.Red,
-    val strokeWidth: Float = 3f,
-    val isDrawing: Boolean = false,
+    val tool: DrawingTool = DrawingTool.PAN_ZOOM, // Default to view mode
+    val color: Color = Color.Black, // Changed default to black for better visibility
+    val strokeWidth: Float = 5f, // Increased default stroke width
+    val isDrawing: Boolean = false, // Start in view mode
     val currentStroke: AnnotationStroke? = null,
+    val selectedStroke: AnnotationStroke? = null, // Currently selected stroke for editing
     val scale: Float = 1f,
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,

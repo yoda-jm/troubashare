@@ -41,6 +41,7 @@ fun FileViewerScreen(
     
     val uiState by viewModel.uiState.collectAsState()
     val drawingState by viewModel.drawingState.collectAsState()
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -81,8 +82,6 @@ fun FileViewerScreen(
                             tint = if (drawingState.isDrawing) MaterialTheme.colorScheme.primary else LocalContentColor.current
                         )
                     }
-                    
-                    // Clear button removed - user can clear via toolbar if needed
                     
                     IconButton(onClick = { /* TODO: Share file */ }) {
                         Icon(

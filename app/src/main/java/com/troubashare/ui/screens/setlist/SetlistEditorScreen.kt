@@ -295,25 +295,41 @@ fun SetlistSongItem(
                 }
             }
             
-            // Move controls
-            IconButton(
-                onClick = onMoveUp,
-                enabled = canMoveUp
+            // Reordering controls with drag handle style
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                IconButton(
+                    onClick = onMoveUp,
+                    enabled = canMoveUp,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = "Move up",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                
+                // Drag handle visual
                 Icon(
-                    imageVector = Icons.Default.KeyboardArrowUp,
-                    contentDescription = "Move up"
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
-            }
-            
-            IconButton(
-                onClick = onMoveDown,
-                enabled = canMoveDown
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Move down"
-                )
+                
+                IconButton(
+                    onClick = onMoveDown,
+                    enabled = canMoveDown,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Move down",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
             
             // Remove button

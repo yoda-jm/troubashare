@@ -119,11 +119,20 @@ class HomeViewModel(
             }
         }
     }
+    
+    fun showConcertModeDialog() {
+        _uiState.value = _uiState.value.copy(showConcertModeDialog = true)
+    }
+
+    fun hideConcertModeDialog() {
+        _uiState.value = _uiState.value.copy(showConcertModeDialog = false)
+    }
 }
 
 data class HomeUiState(
     val showGroupSwitcher: Boolean = false,
-    val showEditGroupDialog: Boolean = false
+    val showEditGroupDialog: Boolean = false,
+    val showConcertModeDialog: Boolean = false
 )
 
 data class EditGroupUiState(

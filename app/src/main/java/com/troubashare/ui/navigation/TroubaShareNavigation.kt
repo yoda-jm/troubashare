@@ -13,6 +13,7 @@ import com.troubashare.ui.screens.setlist.SetlistsScreen
 import com.troubashare.ui.screens.setlist.SetlistEditorScreen
 import com.troubashare.ui.screens.settings.SettingsScreen
 import com.troubashare.ui.screens.file.FileViewerScreen
+import com.troubashare.ui.screens.concert.ConcertModeScreen
 import com.troubashare.domain.model.SongFile
 import java.net.URLDecoder
 
@@ -66,6 +67,9 @@ fun TroubaShareNavigation(
                             inclusive = true
                         }
                     }
+                },
+                onNavigateToConcertMode = { setlistId, memberId ->
+                    navController.navigate(Screen.ConcertMode.createRoute(setlistId, memberId))
                 }
             )
         }
@@ -145,6 +149,33 @@ fun TroubaShareNavigation(
             SettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.ConcertMode.route,
+            arguments = Screen.ConcertMode.arguments
+        ) { backStackEntry ->
+            val setlistId = backStackEntry.arguments?.getString(Screen.ConcertMode.SETLIST_ID_ARG) ?: ""
+            val memberId = backStackEntry.arguments?.getString(Screen.ConcertMode.MEMBER_ID_ARG) ?: ""
+            
+            ConcertModeScreen(
+                setlistId = setlistId,
+                memberId = memberId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToFile = { filePath, fileName, fileType, songTitle, memberName ->
+                    navController.navigate(
+                        Screen.FileViewer.createRoute(
+                            filePath = filePath,
+                            fileName = fileName,
+                            fileType = fileType,
+                            songTitle = songTitle,
+                            memberName = memberName
+                        )
+                    )
                 }
             )
         }

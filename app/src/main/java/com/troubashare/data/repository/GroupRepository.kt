@@ -105,6 +105,17 @@ class GroupRepository(private val database: TroubaShareDatabase) {
         return updatedGroup.toDomainModel(updatedMembers.map { it.toDomainModel() })
     }
     
+    suspend fun getMemberById(memberId: String): Member? {
+        val entity = groupDao.getMemberById(memberId) ?: return null
+        return entity.toDomainModel()
+    }
+    
+    fun getMembersByGroupId(groupId: String): Flow<List<Member>> {
+        return groupDao.getMembersByGroupIdFlow(groupId).map { entities ->
+            entities.map { it.toDomainModel() }
+        }
+    }
+    
     suspend fun deleteGroup(group: Group) {
         val entity = GroupEntity(
             id = group.id,

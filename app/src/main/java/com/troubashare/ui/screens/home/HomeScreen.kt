@@ -17,6 +17,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.troubashare.R
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.repository.GroupRepository
+import com.troubashare.data.repository.SetlistRepository
+import com.troubashare.data.repository.SongRepository
+import com.troubashare.data.file.FileManager
 import com.troubashare.domain.model.Group
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,6 +32,7 @@ fun HomeScreen(
     onNavigateToLibrary: () -> Unit,
     onNavigateToSetlists: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToConcertMode: (String, String) -> Unit = { _, _ -> }, // setlistId, memberId
     onSwitchGroup: (String) -> Unit = {},
     onCreateNewGroup: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -137,8 +141,8 @@ fun HomeScreen(
                 QuickActionCard(
                     title = "Concert Mode",
                     description = "Performance-ready display",
-                    icon = Icons.Default.Add,
-                    onClick = { /* TODO: Navigate to Concert Mode */ },
+                    icon = Icons.Default.MusicNote,
+                    onClick = { viewModel.showConcertModeDialog() },
                     modifier = Modifier.weight(1f)
                 )
                 
@@ -182,6 +186,18 @@ fun HomeScreen(
             onRemoveMember = viewModel::removeEditMemberField,
             onUpdate = viewModel::updateGroup,
             onDismiss = viewModel::hideEditGroupDialog
+        )
+    }
+    
+    // Concert Mode setup dialog
+    if (uiState.showConcertModeDialog) {
+        ConcertModeSetupDialog(
+            groupId = groupId,
+            onSetlistAndMemberSelected = { setlistId, memberId ->
+                onNavigateToConcertMode(setlistId, memberId)
+                viewModel.hideConcertModeDialog()
+            },
+            onDismiss = viewModel::hideConcertModeDialog
         )
     }
 }
@@ -468,6 +484,127 @@ fun EditGroupDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun ConcertModeSetupDialog(
+    groupId: String,
+    onSetlistAndMemberSelected: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedSetlistId by remember { mutableStateOf("") }
+    var selectedMemberId by remember { mutableStateOf("") }
+    
+    val context = LocalContext.current
+    val database = remember { TroubaShareDatabase.getInstance(context) }
+    val fileManager = remember { FileManager(context) }
+    val songRepository = remember { SongRepository(database, fileManager) }
+    val setlistRepository = remember { SetlistRepository(database, songRepository) }
+    val groupRepository = remember { GroupRepository(database) }
+    
+    var setlists by remember { mutableStateOf<List<com.troubashare.domain.model.Setlist>>(emptyList()) }
+    var members by remember { mutableStateOf<List<com.troubashare.domain.model.Member>>(emptyList()) }
+    
+    LaunchedEffect(groupId) {
+        // Load setlists for the group
+        setlistRepository.getSetlistsByGroupId(groupId).collect { setlistList ->
+            setlists = setlistList
+        }
+    }
+    
+    LaunchedEffect(groupId) {
+        // Load members for the group
+        groupRepository.getMembersByGroupId(groupId).collect { memberList ->
+            members = memberList
+        }
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Start Concert Mode") },
+        text = {
+            Column {
+                Text(
+                    text = "Select a setlist and your member profile:",
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                // Setlist selection
+                if (setlists.isNotEmpty()) {
+                    Text(
+                        text = "Setlist:",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    setlists.forEach { setlist ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedSetlistId == setlist.id,
+                                onClick = { selectedSetlistId = setlist.id }
+                            )
+                            Text(
+                                text = setlist.name,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                
+                // Member selection
+                if (members.isNotEmpty()) {
+                    Text(
+                        text = "Your Profile:",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    members.forEach { member ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedMemberId == member.id,
+                                onClick = { selectedMemberId = member.id }
+                            )
+                            Text(
+                                text = member.name,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+                
+                if (setlists.isEmpty() && members.isEmpty()) {
+                    Text(
+                        text = "No setlists or members found. Create a setlist and add members first.",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSetlistAndMemberSelected(selectedSetlistId, selectedMemberId)
+                },
+                enabled = selectedSetlistId.isNotEmpty() && selectedMemberId.isNotEmpty()
+            ) {
+                Text("Start Concert")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )

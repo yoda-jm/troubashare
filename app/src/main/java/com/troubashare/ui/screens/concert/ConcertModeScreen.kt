@@ -14,6 +14,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +24,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
@@ -76,6 +80,17 @@ fun ConcertModeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    
+    // Controls visibility state
+    var showControls by remember { mutableStateOf(true) }
+    
+    // Auto-hide controls after 10 seconds
+    LaunchedEffect(showControls) {
+        if (showControls) {
+            kotlinx.coroutines.delay(10000)
+            showControls = false
+        }
+    }
     
     // System UI management for fullscreen
     val view = LocalView.current
@@ -136,14 +151,23 @@ fun ConcertModeScreen(
                 .background(Color.Black)
                 .windowInsetsPadding(WindowInsets(0, 0, 0, 0))
                 .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { _, dragAmount ->
-                            // Detect edge swipe to open drawer
-                            // You could implement more sophisticated gesture detection here
+                    detectTapGestures(
+                        onTap = {
+                            // Toggle controls - if visible, hide them; if hidden, show them
+                            showControls = !showControls
+                        }
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { 
+                            // Hide controls immediately when any drag starts
+                            if (showControls) {
+                                showControls = false
+                            }
                         },
-                        onDragEnd = {
-                            // Simple swipe detection for navigation
-                            // TODO: Implement swipe left/right for next/previous song
+                        onDrag = { _, _ -> 
+                            // Keep controls hidden during drag
                         }
                     )
                 }
@@ -221,8 +245,7 @@ fun ConcertModeScreen(
                     // TODO: Add file selection or show all files
                     val file = currentSong.files.first()
                     
-                    // Use basic file viewer for concert mode (read-only) - FULLSCREEN
-                    // Add white background for visibility
+                    // Use multi-page PDF viewer for concert mode to show all pages at once
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -231,12 +254,20 @@ fun ConcertModeScreen(
                             modifier = Modifier.fillMaxSize(),
                             color = Color.White
                         ) {
-                            com.troubashare.ui.components.FileViewer(
-                                filePath = file.filePath,
-                                fileName = file.fileName,
-                                fileType = file.fileType.name,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            // Use MultiPagePDFViewer for PDFs to show all pages, regular FileViewer for other types
+                            if (file.fileType.name.uppercase() == "PDF") {
+                                com.troubashare.ui.components.MultiPagePDFViewer(
+                                    filePath = file.filePath,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                com.troubashare.ui.components.FileViewer(
+                                    filePath = file.filePath,
+                                    fileName = file.fileName,
+                                    fileType = file.fileType.name,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 } else {
@@ -274,12 +305,17 @@ fun ConcertModeScreen(
         }
         
         // Top overlay with song title, position, and menu button - positioned to avoid system UI
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(animationSpec = tween(300)) + slideInVertically(animationSpec = tween(300)) { -it },
+            exit = fadeOut(animationSpec = tween(300)) + slideOutVertically(animationSpec = tween(300)) { -it },
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .align(Alignment.TopCenter),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -341,15 +377,21 @@ fun ConcertModeScreen(
                 )
             }
         }
+        }
         
         // Bottom navigation bar - more prominent and positioned properly
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(animationSpec = tween(300)) + slideInVertically(animationSpec = tween(300)) { it },
+            exit = fadeOut(animationSpec = tween(300)) + slideOutVertically(animationSpec = tween(300)) { it },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+                .padding(bottom = 32.dp, start = 16.dp, end = 16.dp, top = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Previous song button
@@ -387,6 +429,7 @@ fun ConcertModeScreen(
                     modifier = Modifier.size(32.dp)
                 )
             }
+        }
         }
     }
     }

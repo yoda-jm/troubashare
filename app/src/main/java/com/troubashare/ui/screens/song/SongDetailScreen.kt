@@ -376,8 +376,19 @@ fun FileItem(
     onView: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showNameDialog by remember { mutableStateOf(false) }
+    var nameInput by remember { mutableStateOf("") }
     // State for annotation visibility in concert mode (per file)
-    var showAnnotationsInConcert by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val preferencesManager = remember { com.troubashare.data.preferences.AnnotationPreferencesManager(context) }
+    var showAnnotationsInConcert by remember { 
+        mutableStateOf(preferencesManager.getAnnotationLayerVisibility(file.id, file.memberId))
+    }
+    
+    // Layer name state
+    var layerName by remember {
+        mutableStateOf(preferencesManager.getAnnotationLayerName(file.id, file.memberId) ?: file.fileName)
+    }
     // DEBUG: Log annotation files for debugging  
     val annotationFiles = allFiles.filter { it.fileType == com.troubashare.domain.model.FileType.ANNOTATION }
     if (annotationFiles.isNotEmpty()) {
@@ -400,8 +411,21 @@ fun FileItem(
     }
     
     Card(
-        onClick = onView,
-        modifier = modifier.fillMaxWidth()
+        onClick = {
+            // Don't allow direct viewing of annotation files - they need to be loaded into a PDF viewer
+            if (file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                onView()
+            }
+        },
+        modifier = modifier.fillMaxWidth(),
+        colors = if (file.fileType == com.troubashare.domain.model.FileType.ANNOTATION) {
+            // Make annotation files visually distinct and less clickable-looking
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Row(
             modifier = Modifier
@@ -427,13 +451,58 @@ fun FileItem(
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = file.fileName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        // Show custom layer name if available, otherwise show filename
+                        Text(
+                            text = if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                                layerName
+                            } else {
+                                file.fileName
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        
+                        // Show original filename if custom name is different
+                        if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION && layerName != file.fileName) {
+                            Text(
+                                text = file.fileName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    
+                    // Layer naming button (only for files with annotations)
+                    if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                        IconButton(
+                            onClick = {
+                                nameInput = layerName
+                                showNameDialog = true
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit layer name",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                    
+                    // Show "annotation layer" label for annotation files
+                    if (file.fileType == com.troubashare.domain.model.FileType.ANNOTATION) {
+                        Text(
+                            text = "(Not directly viewable)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
                     
                     // Annotation layer indicator
                     if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
@@ -485,7 +554,10 @@ fun FileItem(
                     )
                     Switch(
                         checked = showAnnotationsInConcert,
-                        onCheckedChange = { showAnnotationsInConcert = it },
+                        onCheckedChange = { 
+                            showAnnotationsInConcert = it
+                            preferencesManager.setAnnotationLayerVisibility(file.id, file.memberId, it)
+                        },
                         modifier = Modifier.scale(0.7f)
                     )
                 }
@@ -500,5 +572,46 @@ fun FileItem(
                 )
             }
         }
+    }
+    
+    // Layer naming dialog
+    if (showNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showNameDialog = false },
+            title = { Text("Edit Layer Name") },
+            text = {
+                Column {
+                    Text(
+                        text = "Enter a custom name for this annotation layer:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = nameInput,
+                        onValueChange = { nameInput = it },
+                        label = { Text("Layer Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val finalName = nameInput.trim().ifEmpty { file.fileName }
+                        preferencesManager.setAnnotationLayerName(file.id, file.memberId, finalName.takeIf { it != file.fileName })
+                        layerName = finalName
+                        showNameDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNameDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

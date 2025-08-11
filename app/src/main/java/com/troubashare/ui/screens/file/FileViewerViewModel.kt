@@ -25,6 +25,8 @@ import android.graphics.Path
 import android.graphics.pdf.PdfDocument
 import com.google.gson.Gson
 import com.troubashare.data.repository.SongRepository
+import com.troubashare.data.preferences.AnnotationPreferencesManager
+import android.content.Context
 
 class FileViewerViewModel(
     private val annotationRepository: AnnotationRepository,
@@ -32,7 +34,8 @@ class FileViewerViewModel(
     private val fileId: String,
     private val memberId: String,
     private val songId: String,
-    private val filePath: String = ""
+    private val filePath: String = "",
+    private val context: Context
 ) : ViewModel() {
     
     // Store the resolved file ID, member ID, and song ID once we look them up
@@ -109,13 +112,22 @@ class FileViewerViewModel(
     private val _annotations = MutableStateFlow<List<DomainAnnotation>>(emptyList())
     val annotations: StateFlow<List<DomainAnnotation>> = _annotations.asStateFlow()
     
-    // Current page annotations
+    private val preferencesManager = AnnotationPreferencesManager(context)
+    
+    // Current page annotations - filtered by preferences
     val currentPageAnnotations = combine(
         _annotations,
         _currentPage
     ) { annotationList, page ->
         val effectiveMemberId = getEffectiveMemberId()
-        annotationList.filter { it.pageNumber == page && it.memberId == effectiveMemberId }
+        val effectiveFileId = getEffectiveFileId()
+        
+        annotationList.filter { annotation ->
+            // Filter by page and member
+            annotation.pageNumber == page && annotation.memberId == effectiveMemberId &&
+            // Filter by visibility preferences
+            preferencesManager.getAnnotationLayerVisibility(effectiveFileId, annotation.memberId)
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -514,12 +526,7 @@ class FileViewerViewModel(
                 )
                 val jsonContent = gson.toJson(annotationData)
                 
-                // Create filename for annotation layer with effective fileId reference
-                val fileName = "annotations_${getEffectiveFileId()}_${getEffectiveMemberId()}_${System.currentTimeMillis()}.json"
-                println("DEBUG: Saving annotation file: $fileName")
-                println("DEBUG: JSON content length: ${jsonContent.length}")
-                
-                // Save as SongFile with ANNOTATION type
+                // Check for existing annotation layer file to prevent duplicates
                 val effectiveSongId = getEffectiveSongId()
                 if (effectiveSongId.isBlank()) {
                     println("DEBUG: songId is empty - will save annotations to database but cannot create annotation file")
@@ -532,6 +539,38 @@ class FileViewerViewModel(
                     return@launch
                 }
                 
+                // Look for existing annotation layer files for this file/member combination
+                var isUpdate = false
+                val song = songRepository.getSongById(effectiveSongId)
+                val existingAnnotationFile = song?.files?.find { file ->
+                    file.fileType == com.troubashare.domain.model.FileType.ANNOTATION &&
+                    file.memberId == getEffectiveMemberId() &&
+                    file.fileName.startsWith("annotations_${getEffectiveFileId()}_")
+                }
+                
+                // Delete existing annotation file if found
+                if (existingAnnotationFile != null) {
+                    println("DEBUG: Found existing annotation file '${existingAnnotationFile.fileName}', deleting it first")
+                    val deleteResult = songRepository.removeFileFromSong(existingAnnotationFile)
+                    if (deleteResult.isFailure) {
+                        println("DEBUG: Failed to delete existing annotation file: ${deleteResult.exceptionOrNull()?.message}")
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to replace existing annotation layer: ${deleteResult.exceptionOrNull()?.message}"
+                        )
+                        return@launch
+                    }
+                    println("DEBUG: Successfully deleted existing annotation file")
+                    isUpdate = true
+                } else {
+                    println("DEBUG: No existing annotation file found, creating new one")
+                }
+                
+                // Create filename for annotation layer (use timestamp for uniqueness but avoid conflicts)
+                val fileName = "annotations_${getEffectiveFileId()}_${getEffectiveMemberId()}_${System.currentTimeMillis()}.json"
+                println("DEBUG: Saving annotation file: $fileName")
+                println("DEBUG: JSON content length: ${jsonContent.length}")
+                
                 val result = songRepository.addFileToSong(
                     songId = effectiveSongId,
                     memberId = getEffectiveMemberId(),
@@ -542,9 +581,10 @@ class FileViewerViewModel(
                 println("DEBUG: Save result: ${if (result.isSuccess) "SUCCESS" else "FAILED: ${result.exceptionOrNull()?.message}"}")
                 
                 if (result.isSuccess) {
+                    val actionText = if (isUpdate) "updated" else "saved"
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = "✅ SUCCESS: Annotation layer saved as $fileName with $totalStrokes strokes"
+                        errorMessage = "✅ SUCCESS: Annotation layer $actionText as $fileName with $totalStrokes strokes"
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
@@ -575,6 +615,10 @@ class FileViewerViewModel(
                             println("DEBUG: Annotation $index - ID: ${annotation.id}, Strokes: ${annotation.strokes.size}")
                         }
                         _annotations.value = annotationList
+                        
+                        // Log visibility preferences for debugging
+                        val visibility = preferencesManager.getAnnotationLayerVisibility(currentEffectiveFileId, currentEffectiveMemberId)
+                        println("DEBUG: Annotation layer visibility for fileId='$currentEffectiveFileId', memberId='$currentEffectiveMemberId': $visibility")
                     }
             } catch (e: Exception) {
                 println("DEBUG: Error loading annotations: ${e.message}")

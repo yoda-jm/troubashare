@@ -54,7 +54,8 @@ fun FileViewerScreen(
             fileId = songFile.id,
             memberId = currentMemberId,
             songId = songFile.songId,
-            filePath = songFile.filePath
+            filePath = songFile.filePath,
+            context = context
         ) 
     }
     

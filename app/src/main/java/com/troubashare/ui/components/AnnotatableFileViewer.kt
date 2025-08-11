@@ -164,30 +164,66 @@ fun AnnotatablePDFViewer(
                 }
             }
             
-            // PDF content - ensure it doesn't overlap with toolbar  
-            Box(
+            // PDF content with navigation controls in landscape
+            Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clipToBounds() // Prevent content from escaping bounds
-                    // DEBUG: Remove conditional padding to test coordinate alignment
             ) {
-                PDFContent(
-                    pageCount = pageCount,
-                    currentPage = currentPage,
-                    onPageChanged = { currentPage = it },
-                    isLoading = isLoading,
-                    error = error,
-                    bitmap = bitmap,
-                    scale = scale,
-                    offsetX = offsetX,
-                    offsetY = offsetY,
-                    onScaleChanged = { newScale -> scale = newScale },
-                    onOffsetChanged = { newX, newY -> offsetX = newX; offsetY = newY },
-                    drawingState = drawingState,
-                    annotations = annotations,
-                    viewModel = viewModel
-                )
+                // PDF navigation controls for landscape (same as portrait)
+                if (pageCount > 1) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { if (currentPage > 0) currentPage-- },
+                            enabled = currentPage > 0 && !isLoading
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous page")
+                        }
+                        
+                        Text(
+                            text = "Page ${currentPage + 1} of $pageCount",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        
+                        IconButton(
+                            onClick = { if (currentPage < pageCount - 1) currentPage++ },
+                            enabled = currentPage < pageCount - 1 && !isLoading
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next page")
+                        }
+                    }
+                }
+                
+                // PDF content - ensure it doesn't overlap with toolbar
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clipToBounds() // Prevent content from escaping bounds
+                ) {
+                    PDFContent(
+                        pageCount = pageCount,
+                        currentPage = currentPage,
+                        onPageChanged = { currentPage = it },
+                        isLoading = isLoading,
+                        error = error,
+                        bitmap = bitmap,
+                        scale = scale,
+                        offsetX = offsetX,
+                        offsetY = offsetY,
+                        onScaleChanged = { newScale -> scale = newScale },
+                        onOffsetChanged = { newX, newY -> offsetX = newX; offsetY = newY },
+                        drawingState = drawingState,
+                        annotations = annotations,
+                        viewModel = viewModel
+                    )
+                }
             }
         }
     } else {

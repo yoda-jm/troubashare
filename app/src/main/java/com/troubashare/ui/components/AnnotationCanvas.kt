@@ -1,24 +1,19 @@
 package com.troubashare.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectTapGestures
 import com.troubashare.domain.model.*
@@ -58,10 +53,10 @@ fun AnnotationCanvas(
     val textMeasurer = rememberTextMeasurer()
     
     // Calculate effective PDF display area once (will be used in both pointerInput and Canvas)
-    var effectiveWidth by remember { mutableStateOf(0f) }
-    var effectiveHeight by remember { mutableStateOf(0f) }
-    var pdfOffsetX by remember { mutableStateOf(0f) }
-    var pdfOffsetY by remember { mutableStateOf(0f) }
+    var effectiveWidth by remember { mutableFloatStateOf(0f) }
+    var effectiveHeight by remember { mutableFloatStateOf(0f) }
+    var pdfOffsetX by remember { mutableFloatStateOf(0f) }
+    var pdfOffsetY by remember { mutableFloatStateOf(0f) }
     
     Canvas(
         modifier = modifier
@@ -72,7 +67,7 @@ fun AnnotationCanvas(
                         // Handle text annotation placement
                         detectTapGestures { offset ->
                             // CONVERT to PDF-relative position for text dialog
-                            val pdfRelativeOffset = androidx.compose.ui.geometry.Offset(
+                            val pdfRelativeOffset = Offset(
                                 x = (offset.x - pdfOffsetX) / effectiveWidth,   // 0.0 to 1.0 relative to effective PDF area
                                 y = (offset.y - pdfOffsetY) / effectiveHeight  // 0.0 to 1.0 relative to effective PDF area
                             )
@@ -445,7 +440,7 @@ fun AnnotationCanvas(
     }
 }
 
-private fun createPathFromPoints(points: List<com.troubashare.domain.model.AnnotationPoint>): Path {
+private fun createPathFromPoints(points: List<AnnotationPoint>): Path {
     val path = Path()
     try {
         if (points.isNotEmpty()) {

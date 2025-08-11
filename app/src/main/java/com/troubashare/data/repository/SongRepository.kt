@@ -214,7 +214,7 @@ class SongRepository(
         }
     }
     
-    suspend fun removeFileFromSong(songFile: SongFile): Result<Unit> {
+    suspend fun removeFileFromSong(songFile: SongFile, cleanupAnnotations: Boolean = true): Result<Unit> {
         return try {
             println("DEBUG SongRepository: Deleting file - id='${songFile.id}', fileName='${songFile.fileName}', filePath='${songFile.filePath}'")
             
@@ -240,8 +240,8 @@ class SongRepository(
             songDao.deleteSongFile(entity)
             println("DEBUG SongRepository: Successfully deleted file from database")
             
-            // If this was an annotation file, also clean up associated annotations
-            if (songFile.fileType == com.troubashare.domain.model.FileType.ANNOTATION) {
+            // If this was an annotation file, also clean up associated annotations (only if requested)
+            if (songFile.fileType == FileType.ANNOTATION && cleanupAnnotations) {
                 println("DEBUG SongRepository: Cleaning up annotations for deleted annotation layer")
                 
                 // Extract original PDF fileId from annotation filename
@@ -254,6 +254,8 @@ class SongRepository(
                 } else {
                     println("DEBUG SongRepository: WARNING - Could not extract original fileId from annotation filename '${songFile.fileName}'")
                 }
+            } else if (songFile.fileType == FileType.ANNOTATION && !cleanupAnnotations) {
+                println("DEBUG SongRepository: Skipping annotation cleanup for annotation file replacement")
             }
             
             Result.success(Unit)

@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.troubashare.domain.model.DrawingState
 import com.troubashare.domain.model.DrawingTool
@@ -53,7 +52,7 @@ fun ExpandableToolsFab(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Include all tools in the FAB
-                val allTools = DrawingTool.values()
+                val allTools = DrawingTool.entries.toTypedArray()
                 
                 allTools.reversed().forEach { tool ->
                     ToolFab(

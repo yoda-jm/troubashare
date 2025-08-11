@@ -120,9 +120,9 @@ class ConcertModeViewModel(
         // Adjust current song index if needed
         val newCurrentIndex = when {
             currentState.currentSongIndex == fromIndex -> toIndex
-            currentState.currentSongIndex > fromIndex && currentState.currentSongIndex <= toIndex -> 
+            currentState.currentSongIndex in (fromIndex + 1)..toIndex ->
                 currentState.currentSongIndex - 1
-            currentState.currentSongIndex >= toIndex && currentState.currentSongIndex < fromIndex -> 
+            currentState.currentSongIndex in toIndex..<fromIndex ->
                 currentState.currentSongIndex + 1
             else -> currentState.currentSongIndex
         }

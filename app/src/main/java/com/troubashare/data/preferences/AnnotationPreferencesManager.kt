@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.troubashare.domain.model.AnnotationLayerPreferences
+import androidx.core.content.edit
 
 class AnnotationPreferencesManager(context: Context) {
     
@@ -20,15 +21,12 @@ class AnnotationPreferencesManager(context: Context) {
         val key = "${fileId}_${memberId}"
         
         val existingPref = preferences[key]
-        val updatedPref = if (existingPref != null) {
-            existingPref.copy(showInConcert = showInConcert)
-        } else {
-            AnnotationLayerPreferences(
+        val updatedPref = existingPref?.copy(showInConcert = showInConcert)
+            ?: AnnotationLayerPreferences(
                 fileId = fileId,
                 memberId = memberId,
                 showInConcert = showInConcert
             )
-        }
         
         preferences[key] = updatedPref
         saveAnnotationLayerPreferences(preferences)
@@ -45,15 +43,12 @@ class AnnotationPreferencesManager(context: Context) {
         val key = "${fileId}_${memberId}"
         
         val existingPref = preferences[key]
-        val updatedPref = if (existingPref != null) {
-            existingPref.copy(layerName = name)
-        } else {
-            AnnotationLayerPreferences(
+        val updatedPref = existingPref?.copy(layerName = name)
+            ?: AnnotationLayerPreferences(
                 fileId = fileId,
                 memberId = memberId,
                 layerName = name
             )
-        }
         
         preferences[key] = updatedPref
         saveAnnotationLayerPreferences(preferences)
@@ -77,8 +72,8 @@ class AnnotationPreferencesManager(context: Context) {
     
     private fun saveAnnotationLayerPreferences(preferences: Map<String, AnnotationLayerPreferences>) {
         val json = gson.toJson(preferences)
-        prefs.edit()
-            .putString("layer_preferences", json)
-            .apply()
+        prefs.edit {
+            putString("layer_preferences", json)
+        }
     }
 }

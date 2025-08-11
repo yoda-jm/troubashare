@@ -3,7 +3,6 @@ package com.troubashare.ui.screens.song
 import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -13,11 +12,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.troubashare.R
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.file.FileManager
 import com.troubashare.data.repository.SongRepository
@@ -25,10 +22,8 @@ import com.troubashare.data.repository.GroupRepository
 import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.SongFile
 import com.troubashare.domain.model.Member
-import com.troubashare.ui.components.FilePickerButton
 import com.troubashare.ui.components.ImagePickerButton
 import com.troubashare.ui.components.PDFPickerButton
-import kotlinx.coroutines.flow.flow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

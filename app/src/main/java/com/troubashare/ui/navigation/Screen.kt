@@ -4,9 +4,9 @@ import androidx.navigation.NavType
 import androidx.navigation.navArgument
 
 sealed class Screen(val route: String) {
-    object GroupSelection : Screen("group_selection")
+    data object GroupSelection : Screen("group_selection")
     
-    object Home : Screen("home/{groupId}") {
+    data object Home : Screen("home/{groupId}") {
         const val GROUP_ID_ARG = "groupId"
         
         val arguments = listOf(
@@ -20,7 +20,7 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object Library : Screen("library/{groupId}") {
+    data object Library : Screen("library/{groupId}") {
         const val GROUP_ID_ARG = "groupId"
         
         val arguments = listOf(
@@ -33,7 +33,7 @@ sealed class Screen(val route: String) {
             return route.replace("{$GROUP_ID_ARG}", groupId)
         }
     }
-    object Setlists : Screen("setlists/{groupId}") {
+    data object Setlists : Screen("setlists/{groupId}") {
         const val GROUP_ID_ARG = "groupId"
         
         val arguments = listOf(
@@ -46,9 +46,9 @@ sealed class Screen(val route: String) {
             return route.replace("{$GROUP_ID_ARG}", groupId)
         }
     }
-    object Settings : Screen("settings")
+    data object Settings : Screen("settings")
     
-    object SongDetails : Screen("song_details/{groupId}/{songId}") {
+    data object SongDetails : Screen("song_details/{groupId}/{songId}") {
         const val GROUP_ID_ARG = "groupId"
         const val SONG_ID_ARG = "songId"
         
@@ -67,7 +67,7 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object SetlistEditor : Screen("setlist_editor/{setlistId}") {
+    data object SetlistEditor : Screen("setlist_editor/{setlistId}") {
         const val SETLIST_ID_ARG = "setlistId"
         
         val arguments = listOf(
@@ -81,7 +81,7 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object ConcertMode : Screen("concert_mode/{setlistId}/{memberId}") {
+    data object ConcertMode : Screen("concert_mode/{setlistId}/{memberId}") {
         const val SETLIST_ID_ARG = "setlistId"
         const val MEMBER_ID_ARG = "memberId"
         
@@ -100,7 +100,7 @@ sealed class Screen(val route: String) {
         }
     }
     
-    object FileViewer : Screen("file_viewer/{filePath}/{fileName}/{fileType}/{songTitle}/{memberName}") {
+    data object FileViewer : Screen("file_viewer/{filePath}/{fileName}/{fileType}/{songTitle}/{memberName}") {
         const val FILE_PATH_ARG = "filePath"
         const val FILE_NAME_ARG = "fileName"
         const val FILE_TYPE_ARG = "fileType"

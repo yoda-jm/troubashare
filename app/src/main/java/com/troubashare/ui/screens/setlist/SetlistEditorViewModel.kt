@@ -4,14 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
-import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.Setlist
-import com.troubashare.domain.model.SetlistItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 class SetlistEditorViewModel(
     private val setlistRepository: SetlistRepository,

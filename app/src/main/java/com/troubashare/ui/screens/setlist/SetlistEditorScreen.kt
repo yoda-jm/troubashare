@@ -19,7 +19,6 @@ import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.file.FileManager
 import com.troubashare.domain.model.Song
-import com.troubashare.domain.model.Setlist
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

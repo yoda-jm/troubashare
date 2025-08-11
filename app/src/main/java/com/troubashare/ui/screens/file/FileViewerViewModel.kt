@@ -484,11 +484,7 @@ class FileViewerViewModel(
                 println("DEBUG: Starting to save annotation layer...")
                 _uiState.value = _uiState.value.copy(isLoading = true)
                 
-                // Force reload annotations to ensure we have the latest data
-                println("DEBUG: Reloading annotations to ensure fresh data...")
-                loadAnnotations()
-                kotlinx.coroutines.delay(100) // Small delay to ensure flow updates
-                
+                // Use current annotations state - don't reload as it might overwrite unsaved changes
                 val annotations = _annotations.value
                 println("DEBUG: Found ${annotations.size} annotations to save")
                 
@@ -541,26 +537,16 @@ class FileViewerViewModel(
                 
                 // Look for existing annotation layer files for this file/member combination
                 var isUpdate = false
+                var existingAnnotationFile: com.troubashare.domain.model.SongFile? = null
                 val song = songRepository.getSongById(effectiveSongId)
-                val existingAnnotationFile = song?.files?.find { file ->
+                existingAnnotationFile = song?.files?.find { file ->
                     file.fileType == com.troubashare.domain.model.FileType.ANNOTATION &&
                     file.memberId == getEffectiveMemberId() &&
                     file.fileName.startsWith("annotations_${getEffectiveFileId()}_")
                 }
                 
-                // Delete existing annotation file if found
                 if (existingAnnotationFile != null) {
-                    println("DEBUG: Found existing annotation file '${existingAnnotationFile.fileName}', deleting it first")
-                    val deleteResult = songRepository.removeFileFromSong(existingAnnotationFile)
-                    if (deleteResult.isFailure) {
-                        println("DEBUG: Failed to delete existing annotation file: ${deleteResult.exceptionOrNull()?.message}")
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to replace existing annotation layer: ${deleteResult.exceptionOrNull()?.message}"
-                        )
-                        return@launch
-                    }
-                    println("DEBUG: Successfully deleted existing annotation file")
+                    println("DEBUG: Found existing annotation file '${existingAnnotationFile.fileName}', will replace it")
                     isUpdate = true
                 } else {
                     println("DEBUG: No existing annotation file found, creating new one")
@@ -571,6 +557,7 @@ class FileViewerViewModel(
                 println("DEBUG: Saving annotation file: $fileName")
                 println("DEBUG: JSON content length: ${jsonContent.length}")
                 
+                // Save the new annotation file first
                 val result = songRepository.addFileToSong(
                     songId = effectiveSongId,
                     memberId = getEffectiveMemberId(),
@@ -581,6 +568,19 @@ class FileViewerViewModel(
                 println("DEBUG: Save result: ${if (result.isSuccess) "SUCCESS" else "FAILED: ${result.exceptionOrNull()?.message}"}")
                 
                 if (result.isSuccess) {
+                    // Only delete existing file AFTER successfully saving the new one
+                    if (existingAnnotationFile != null) {
+                        println("DEBUG: New file saved successfully, now deleting old annotation file '${existingAnnotationFile.fileName}'")
+                        // Pass cleanupAnnotations = false to avoid clearing the database annotations we just saved
+                        val deleteResult = songRepository.removeFileFromSong(existingAnnotationFile, cleanupAnnotations = false)
+                        if (deleteResult.isFailure) {
+                            println("DEBUG: Warning: Failed to delete old annotation file (new file is saved): ${deleteResult.exceptionOrNull()?.message}")
+                            // Don't fail the operation - the new file is saved
+                        } else {
+                            println("DEBUG: Successfully deleted old annotation file")
+                        }
+                    }
+                    
                     val actionText = if (isUpdate) "updated" else "saved"
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,

@@ -4,8 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
@@ -24,7 +22,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -33,8 +30,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.troubashare.ui.screens.file.FileViewerViewModel
-import com.troubashare.domain.model.Annotation as DomainAnnotation
-import com.troubashare.domain.model.DrawingTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -456,7 +451,7 @@ fun PDFContent(
                     // Annotation layer only when drawing mode is active
                     if (drawingState.isDrawing) {
                         AnnotationCanvas(
-                            backgroundBitmap = bitmap?.asImageBitmap(),
+                            backgroundBitmap = bitmap.asImageBitmap(),
                             annotations = annotations,
                             drawingState = drawingState,
                             onStrokeAdded = viewModel::addStroke,
@@ -567,7 +562,7 @@ fun PDFContent(
     if (drawingState.showTextDialog && drawingState.textDialogPosition != null) {
         TextInputDialog(
             onTextEntered = { text ->
-                viewModel.addTextAnnotation(text, drawingState.textDialogPosition!!)
+                viewModel.addTextAnnotation(text, drawingState.textDialogPosition)
             },
             onDismiss = {
                 viewModel.updateDrawingState(

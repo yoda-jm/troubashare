@@ -10,8 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.Backspace
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -359,9 +357,9 @@ fun AnnotationListItem(
                             .size(16.dp)
                             .background(
                                 try {
-                                    androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
+                                    Color(stroke.color.toUInt().toInt())
                                 } catch (e: Exception) {
-                                    androidx.compose.ui.graphics.Color.Black
+                                    Color.Black
                                 },
                                 CircleShape
                             )
@@ -449,9 +447,9 @@ fun SelectableAnnotationListItem(
                                 .size(16.dp)
                                 .background(
                                     try {
-                                        androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
+                                        Color(stroke.color.toUInt().toInt())
                                     } catch (e: Exception) {
-                                        androidx.compose.ui.graphics.Color.Black
+                                        Color.Black
                                     },
                                     CircleShape
                                 )

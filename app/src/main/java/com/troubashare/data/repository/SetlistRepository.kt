@@ -19,8 +19,9 @@ class SetlistRepository(
     fun getSetlistsByGroupId(groupId: String): Flow<List<Setlist>> {
         return setlistDao.getSetlistsByGroupId(groupId).map { entities ->
             entities.map { entity ->
-                // For list view, don't load items for performance
-                entity.toDomainModel(emptyList())
+                // For list view, don't load full items but show correct count
+                val itemCount = setlistDao.getSetlistItemCount(entity.id)
+                entity.toDomainModel(emptyList(), itemCount)
             }
         }
     }
@@ -28,8 +29,9 @@ class SetlistRepository(
     fun searchSetlists(groupId: String, query: String): Flow<List<Setlist>> {
         return setlistDao.searchSetlists(groupId, query).map { entities ->
             entities.map { entity ->
-                // For search view, don't load items for performance  
-                entity.toDomainModel(emptyList())
+                // For search view, don't load full items but show correct count
+                val itemCount = setlistDao.getSetlistItemCount(entity.id)
+                entity.toDomainModel(emptyList(), itemCount)
             }
         }
     }
@@ -79,7 +81,7 @@ class SetlistRepository(
         )
         
         setlistDao.insertSetlist(entity)
-        return entity.toDomainModel(emptyList())
+        return entity.toDomainModel(emptyList(), 0)
     }
     
     suspend fun updateSetlist(setlist: Setlist): Setlist {
@@ -229,7 +231,32 @@ class SetlistRepository(
 }
 
 // Extension functions for conversion
-private fun SetlistEntity.toDomainModel(items: List<SetlistItem>): Setlist {
+private fun SetlistEntity.toDomainModel(items: List<SetlistItem>, itemCount: Int? = null): Setlist {
+    // Create dummy items for count display when items list is empty but count is provided
+    val effectiveItems = if (items.isEmpty() && itemCount != null && itemCount > 0) {
+        // Create placeholder items for count display only - these won't be used for detailed operations
+        (1..itemCount).map { index ->
+            SetlistItem(
+                id = "placeholder-$index",
+                setlistId = id,
+                song = com.troubashare.domain.model.Song(
+                    id = "placeholder-song",
+                    groupId = groupId,
+                    title = "Loading...",
+                    artist = null,
+                    key = null,
+                    tempo = null,
+                    tags = emptyList(),
+                    notes = null,
+                    files = emptyList()
+                ),
+                position = index - 1
+            )
+        }
+    } else {
+        items
+    }
+    
     return Setlist(
         id = id,
         groupId = groupId,
@@ -237,7 +264,7 @@ private fun SetlistEntity.toDomainModel(items: List<SetlistItem>): Setlist {
         description = description,
         venue = venue,
         eventDate = eventDate,
-        items = items,
+        items = effectiveItems,
         createdAt = createdAt,
         updatedAt = updatedAt
     )

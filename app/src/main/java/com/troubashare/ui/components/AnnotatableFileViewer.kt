@@ -169,8 +169,8 @@ fun AnnotatablePDFViewer(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(start = if (drawingState.isDrawing) 4.dp else 0.dp)
                     .clipToBounds() // Prevent content from escaping bounds
+                    // DEBUG: Remove conditional padding to test coordinate alignment
             ) {
                 PDFContent(
                     pageCount = pageCount,
@@ -412,14 +412,15 @@ fun PDFContent(
                         Image(
                             bitmap = bitmap.asImageBitmap(),
                             contentDescription = "PDF Page",
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit // Ensure PDF maintains aspect ratio
                         )
                     }
                     
                     // Annotation layer only when drawing mode is active
                     if (drawingState.isDrawing) {
                         AnnotationCanvas(
-                            backgroundBitmap = null,
+                            backgroundBitmap = bitmap?.asImageBitmap(),
                             annotations = annotations,
                             drawingState = drawingState,
                             onStrokeAdded = viewModel::addStroke,
@@ -454,21 +455,16 @@ fun PDFContent(
                         )
                     } else {
                         // Show annotations overlay when not in drawing mode
-                        // Calculate toolbar offset - annotations were drawn with toolbar present in landscape
                         val configuration = LocalConfiguration.current
                         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-                        val toolbarOffsetX = if (isLandscape) {
-                            val offsetPx = 220f * LocalContext.current.resources.displayMetrics.density // Convert 220.dp to pixels
-                            println("DEBUG AnnotationOverlay: Landscape mode - applying toolbar offset: ${offsetPx}px")
-                            offsetPx
-                        } else {
-                            println("DEBUG AnnotationOverlay: Portrait mode - no toolbar offset")
-                            0f
-                        }
+                        
+                        // ROOT CAUSE FIX: No offset needed since coordinates are now normalized
+                        val toolbarOffsetX = 0f
                         
                         AnnotationOverlay(
                             annotations = annotations,
                             toolbarOffsetX = toolbarOffsetX,
+                            pdfBitmap = bitmap,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer(
@@ -588,34 +584,55 @@ fun TextInputDialog(
 fun AnnotationOverlay(
     annotations: List<com.troubashare.domain.model.Annotation>,
     modifier: Modifier = Modifier,
-    toolbarOffsetX: Float = 0f // Offset to account for toolbar in drawing mode
+    toolbarOffsetX: Float = 0f, // Offset to account for toolbar in drawing mode
+    pdfBitmap: Bitmap? = null // PDF bitmap to calculate actual display area
 ) {
     val textMeasurer = rememberTextMeasurer()
     
     Canvas(
         modifier = modifier.fillMaxSize()
     ) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+        
+        // Calculate effective PDF display area (accounting for aspect ratio and ContentScale.Fit)
+        var effectiveWidth = canvasWidth
+        var effectiveHeight = canvasHeight
+        var pdfOffsetX = 0f
+        var pdfOffsetY = 0f
+        
+        if (pdfBitmap != null) {
+            val bitmapAspectRatio = pdfBitmap.width.toFloat() / pdfBitmap.height.toFloat()
+            val canvasAspectRatio = canvasWidth / canvasHeight
+            
+            if (bitmapAspectRatio > canvasAspectRatio) {
+                // PDF is wider - fit to width, letterbox top/bottom
+                effectiveWidth = canvasWidth
+                effectiveHeight = canvasWidth / bitmapAspectRatio
+                pdfOffsetY = (canvasHeight - effectiveHeight) / 2f
+            } else {
+                // PDF is taller - fit to height, letterbox left/right  
+                effectiveHeight = canvasHeight
+                effectiveWidth = canvasHeight * bitmapAspectRatio
+                pdfOffsetX = (canvasWidth - effectiveWidth) / 2f
+            }
+        }
+        
         // Draw existing annotation strokes (read-only)
         annotations.forEach { annotationItem ->
             annotationItem.strokes.forEach { stroke ->
                 if (stroke.points.isNotEmpty()) {
-                    // Adjust points by toolbar offset if needed
-                    // When viewing without toolbar, annotations need to be shifted LEFT by toolbar width
-                    // because they were drawn with toolbar present (content was shifted right)
-                    val adjustedPoints = if (toolbarOffsetX != 0f) {
-                        val originalFirstPoint = stroke.points.firstOrNull()
-                        val adjusted = stroke.points.map { point ->
-                            point.copy(x = point.x - toolbarOffsetX)
-                        }
-                        val adjustedFirstPoint = adjusted.firstOrNull()
-                        if (originalFirstPoint != null && adjustedFirstPoint != null) {
-                            println("DEBUG AnnotationOverlay: Point adjustment - original: (${originalFirstPoint.x}, ${originalFirstPoint.y}) -> adjusted: (${adjustedFirstPoint.x}, ${adjustedFirstPoint.y}), offset: $toolbarOffsetX")
-                        }
-                        adjusted
-                    } else {
-                        stroke.points
+                    // CONVERT from PDF-relative coordinates (0.0-1.0) to effective PDF display area pixels
+                    val originalFirstPoint = stroke.points.firstOrNull()
+                    val canvasPoints = stroke.points.map { point ->
+                        // Convert from PDF-relative (0.0-1.0) to effective PDF area pixels + offset
+                        val canvasX = point.x * effectiveWidth + pdfOffsetX   // PDF-relative to effective area pixels
+                        val canvasY = point.y * effectiveHeight + pdfOffsetY  // PDF-relative to effective area pixels
+                        point.copy(x = canvasX, y = canvasY)
                     }
-                    val path = createPathFromPoints(adjustedPoints)
+                    
+                    
+                    val path = createPathFromPoints(canvasPoints)
                     val strokeColor = try {
                         androidx.compose.ui.graphics.Color(stroke.color.toUInt().toInt())
                     } catch (e: Exception) {
@@ -662,8 +679,8 @@ fun AnnotationOverlay(
                         com.troubashare.domain.model.DrawingTool.TEXT -> {
                             // Draw text annotation - ensure it's always visible
                             stroke.text?.let { text ->
-                                if (adjustedPoints.isNotEmpty()) {
-                                    val position = adjustedPoints.first()
+                                if (canvasPoints.isNotEmpty()) {
+                                    val position = canvasPoints.first()
                                     // Use black color for maximum visibility, regardless of original color
                                     val textColor = androidx.compose.ui.graphics.Color.Black
                                     

@@ -59,6 +59,12 @@ fun AnnotationCanvas(
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     
+    // Calculate effective PDF display area once (will be used in both pointerInput and Canvas)
+    var effectiveWidth by remember { mutableStateOf(0f) }
+    var effectiveHeight by remember { mutableStateOf(0f) }
+    var pdfOffsetX by remember { mutableStateOf(0f) }
+    var pdfOffsetY by remember { mutableStateOf(0f) }
+    
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -67,10 +73,16 @@ fun AnnotationCanvas(
                     DrawingTool.TEXT -> {
                         // Handle text annotation placement
                         detectTapGestures { offset ->
+                            // CONVERT to PDF-relative position for text dialog
+                            val pdfRelativeOffset = androidx.compose.ui.geometry.Offset(
+                                x = (offset.x - pdfOffsetX) / effectiveWidth,   // 0.0 to 1.0 relative to effective PDF area
+                                y = (offset.y - pdfOffsetY) / effectiveHeight  // 0.0 to 1.0 relative to effective PDF area
+                            )
+                            
                             onDrawingStateChanged(
                                 drawingState.copy(
                                     showTextDialog = true,
-                                    textDialogPosition = offset
+                                    textDialogPosition = pdfRelativeOffset  // Use PDF-relative position
                                 )
                             )
                         }
@@ -80,13 +92,17 @@ fun AnnotationCanvas(
                         // Handle drawing gestures
                         detectDragGestures(
                             onDragStart = { offset ->
+                                // CONVERT to PDF-relative coordinates (0.0 to 1.0 range)
+                                val pdfRelativeX = (offset.x - pdfOffsetX) / effectiveWidth   // 0.0 to 1.0 relative to effective PDF area
+                                val pdfRelativeY = (offset.y - pdfOffsetY) / effectiveHeight  // 0.0 to 1.0 relative to effective PDF area
+                                
                                 currentPath = Path().apply { 
                                     moveTo(offset.x, offset.y) 
                                 }
                                 currentPoints = listOf(
                                     AnnotationPoint(
-                                        x = offset.x,
-                                        y = offset.y,
+                                        x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
+                                        y = pdfRelativeY,
                                         pressure = 1f,
                                         timestamp = System.currentTimeMillis()
                                     )
@@ -96,9 +112,14 @@ fun AnnotationCanvas(
                                 change.consume() // Consume touch events to prevent conflicts
                                 currentPath?.let { path ->
                                     path.lineTo(change.position.x, change.position.y)
+                                    
+                                    // CONVERT drag coordinates to PDF-relative too
+                                    val pdfRelativeX = (change.position.x - pdfOffsetX) / effectiveWidth
+                                    val pdfRelativeY = (change.position.y - pdfOffsetY) / effectiveHeight
+                                    
                                     currentPoints = currentPoints + AnnotationPoint(
-                                        x = change.position.x,
-                                        y = change.position.y,
+                                        x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
+                                        y = pdfRelativeY,
                                         pressure = 1f,
                                         timestamp = System.currentTimeMillis()
                                     )
@@ -131,7 +152,7 @@ fun AnnotationCanvas(
                             onDragStart = { startOffset ->
                                 // Hit test to find stroke at touch point for movement
                                 val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-                                val selectedStroke = findStrokeAtPoint(allStrokes, startOffset)
+                                val selectedStroke = findStrokeAtPoint(allStrokes, startOffset, effectiveWidth, effectiveHeight)
                                 if (selectedStroke != null && onStrokeUpdated != null) {
                                     // Store original stroke for movement
                                     currentPoints = listOf(
@@ -149,7 +170,7 @@ fun AnnotationCanvas(
                                     change.consume()
                                     val allStrokes = annotations.flatMap { it.strokes } + localStrokes
                                     val startOffset = Offset(currentPoints.first().x, currentPoints.first().y)
-                                    val selectedStroke = findStrokeAtPoint(allStrokes, startOffset)
+                                    val selectedStroke = findStrokeAtPoint(allStrokes, startOffset, effectiveWidth, effectiveHeight)
                                     
                                     selectedStroke?.let { stroke ->
                                         // Calculate translation
@@ -191,12 +212,70 @@ fun AnnotationCanvas(
                 }
             }
     ) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+        
+        // Update effective PDF display area (same logic as AnnotationOverlay)
+        val newEffectiveWidth: Float
+        val newEffectiveHeight: Float
+        val newPdfOffsetX: Float
+        val newPdfOffsetY: Float
+        
+        if (backgroundBitmap != null) {
+            val bitmapAspectRatio = backgroundBitmap.width.toFloat() / backgroundBitmap.height.toFloat()
+            val canvasAspectRatio = canvasWidth / canvasHeight
+            
+            if (bitmapAspectRatio > canvasAspectRatio) {
+                // PDF is wider - fit to width, letterbox top/bottom
+                newEffectiveWidth = canvasWidth
+                newEffectiveHeight = canvasWidth / bitmapAspectRatio
+                newPdfOffsetX = 0f
+                newPdfOffsetY = (canvasHeight - newEffectiveHeight) / 2f
+            } else {
+                // PDF is taller - fit to height, letterbox left/right  
+                newEffectiveHeight = canvasHeight
+                newEffectiveWidth = canvasHeight * bitmapAspectRatio
+                newPdfOffsetX = (canvasWidth - newEffectiveWidth) / 2f
+                newPdfOffsetY = 0f
+            }
+        } else {
+            // Fallback to full canvas if no bitmap available
+            newEffectiveWidth = canvasWidth
+            newEffectiveHeight = canvasHeight
+            newPdfOffsetX = 0f
+            newPdfOffsetY = 0f
+        }
+        
+        // Update state variables
+        effectiveWidth = newEffectiveWidth
+        effectiveHeight = newEffectiveHeight
+        pdfOffsetX = newPdfOffsetX
+        pdfOffsetY = newPdfOffsetY
+        
         // Draw existing annotation strokes (background handled by parent)
         val allStrokes = annotations.flatMap { it.strokes } + localStrokes
+        
+        // Show existing strokes position for comparison
+        allStrokes.forEach { stroke ->
+            if (stroke.points.isNotEmpty()) {
+                val firstPoint = stroke.points.first()
+                // Convert PDF-relative coordinates to canvas pixels for display
+                val canvasX = firstPoint.x * canvasWidth
+                val canvasY = firstPoint.y * canvasHeight
+                println("DEBUG AnnotationCanvas: EXISTING stroke - PDF-relative: (${firstPoint.x}, ${firstPoint.y}) → canvas pixels: (${canvasX}, ${canvasY}) = (${firstPoint.x*100}%, ${firstPoint.y*100}%)")
+            }
+        }
         allStrokes.forEach { stroke ->
             val isSelected = drawingState.selectedStroke?.id == stroke.id
             if (stroke.points.isNotEmpty()) {
-                val path = createPathFromPoints(stroke.points)
+                // CONVERT from PDF-relative coordinates (0.0-1.0) to effective PDF display area pixels
+                val canvasPoints = stroke.points.map { point ->
+                    point.copy(
+                        x = point.x * effectiveWidth + pdfOffsetX,   // PDF-relative to effective area pixels
+                        y = point.y * effectiveHeight + pdfOffsetY   // PDF-relative to effective area pixels
+                    )
+                }
+                val path = createPathFromPoints(canvasPoints)
                 val strokeColor = try {
                     Color(stroke.color.toUInt().toInt())
                 } catch (e: Exception) {
@@ -284,8 +363,8 @@ fun AnnotationCanvas(
                     DrawingTool.TEXT -> {
                         // Draw text annotation
                         stroke.text?.let { text ->
-                            if (stroke.points.isNotEmpty()) {
-                                val position = stroke.points.first()
+                            if (canvasPoints.isNotEmpty()) {
+                                val position = canvasPoints.first()  // Use canvas-converted coordinates
                                 // Use black color for maximum visibility in drawing mode too
                                 val textColor = Color.Black
                                 
@@ -397,7 +476,7 @@ private fun createPathFromPoints(points: List<com.troubashare.domain.model.Annot
     return path
 }
 
-private fun findStrokeAtPoint(strokes: List<AnnotationStroke>, point: Offset): AnnotationStroke? {
+private fun findStrokeAtPoint(strokes: List<AnnotationStroke>, point: Offset, canvasWidth: Float, canvasHeight: Float): AnnotationStroke? {
     val hitRadius = 50f // Adjust hit detection radius as needed
     
     return strokes.reversed().firstOrNull { stroke ->
@@ -405,9 +484,14 @@ private fun findStrokeAtPoint(strokes: List<AnnotationStroke>, point: Offset): A
             DrawingTool.TEXT -> {
                 // For text, check if point is within text bounds
                 if (stroke.points.isNotEmpty()) {
-                    val textPosition = stroke.points.first()
+                    val pdfPosition = stroke.points.first()
+                    // Convert PDF-relative coordinates to canvas pixels
+                    val canvasPosition = Offset(
+                        x = pdfPosition.x * canvasWidth,
+                        y = pdfPosition.y * canvasHeight
+                    )
                     val textBounds = androidx.compose.ui.geometry.Rect(
-                        offset = Offset(textPosition.x, textPosition.y),
+                        offset = canvasPosition,
                         size = androidx.compose.ui.geometry.Size(
                             width = (stroke.text?.length ?: 0) * stroke.strokeWidth * 2,
                             height = stroke.strokeWidth * 4
@@ -419,9 +503,12 @@ private fun findStrokeAtPoint(strokes: List<AnnotationStroke>, point: Offset): A
             DrawingTool.PEN, DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
                 // For drawing strokes, check distance to any point on the path
                 stroke.points.any { strokePoint ->
+                    // Convert PDF-relative coordinates to canvas pixels
+                    val canvasX = strokePoint.x * canvasWidth
+                    val canvasY = strokePoint.y * canvasHeight
                     val distance = kotlin.math.sqrt(
-                        (point.x - strokePoint.x) * (point.x - strokePoint.x) + 
-                        (point.y - strokePoint.y) * (point.y - strokePoint.y)
+                        (point.x - canvasX) * (point.x - canvasX) + 
+                        (point.y - canvasY) * (point.y - canvasY)
                     )
                     distance <= hitRadius
                 }

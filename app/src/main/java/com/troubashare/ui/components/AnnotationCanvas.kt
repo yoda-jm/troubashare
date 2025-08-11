@@ -36,7 +36,6 @@ fun AnnotationCanvas(
     onStrokeUpdated: ((old: AnnotationStroke, new: AnnotationStroke) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var currentPath by remember { mutableStateOf<Path?>(null) }
     var currentPoints by remember { mutableStateOf<List<AnnotationPoint>>(emptyList()) }
     
     // Keep local strokes until they appear in annotations from parent
@@ -45,7 +44,6 @@ fun AnnotationCanvas(
     // Force recomposition when drawing state changes
     LaunchedEffect(drawingState.isDrawing) {
         if (!drawingState.isDrawing) {
-            currentPath = null
             currentPoints = emptyList()
         }
     }
@@ -96,9 +94,7 @@ fun AnnotationCanvas(
                                 val pdfRelativeX = (offset.x - pdfOffsetX) / effectiveWidth   // 0.0 to 1.0 relative to effective PDF area
                                 val pdfRelativeY = (offset.y - pdfOffsetY) / effectiveHeight  // 0.0 to 1.0 relative to effective PDF area
                                 
-                                currentPath = Path().apply { 
-                                    moveTo(offset.x, offset.y) 
-                                }
+                                // Initialize with first point
                                 currentPoints = listOf(
                                     AnnotationPoint(
                                         x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
@@ -110,20 +106,18 @@ fun AnnotationCanvas(
                             },
                             onDrag = { change, _ ->
                                 change.consume() // Consume touch events to prevent conflicts
-                                currentPath?.let { path ->
-                                    path.lineTo(change.position.x, change.position.y)
-                                    
-                                    // CONVERT drag coordinates to PDF-relative too
-                                    val pdfRelativeX = (change.position.x - pdfOffsetX) / effectiveWidth
-                                    val pdfRelativeY = (change.position.y - pdfOffsetY) / effectiveHeight
-                                    
-                                    currentPoints = currentPoints + AnnotationPoint(
-                                        x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
-                                        y = pdfRelativeY,
-                                        pressure = 1f,
-                                        timestamp = System.currentTimeMillis()
-                                    )
-                                }
+                                
+                                // CONVERT drag coordinates to PDF-relative
+                                val pdfRelativeX = (change.position.x - pdfOffsetX) / effectiveWidth
+                                val pdfRelativeY = (change.position.y - pdfOffsetY) / effectiveHeight
+                                
+                                // Add point to PDF-relative coordinates list for real-time drawing
+                                currentPoints = currentPoints + AnnotationPoint(
+                                    x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
+                                    y = pdfRelativeY,
+                                    pressure = 1f,
+                                    timestamp = System.currentTimeMillis()
+                                )
                             },
                             onDragEnd = {
                                 if (currentPoints.isNotEmpty()) {
@@ -140,7 +134,6 @@ fun AnnotationCanvas(
                                     // Also send to parent for persistence
                                     onStrokeAdded(stroke)
                                 }
-                                currentPath = null
                                 currentPoints = emptyList()
                             }
                         )
@@ -255,16 +248,6 @@ fun AnnotationCanvas(
         // Draw existing annotation strokes (background handled by parent)
         val allStrokes = annotations.flatMap { it.strokes } + localStrokes
         
-        // Show existing strokes position for comparison
-        allStrokes.forEach { stroke ->
-            if (stroke.points.isNotEmpty()) {
-                val firstPoint = stroke.points.first()
-                // Convert PDF-relative coordinates to canvas pixels for display
-                val canvasX = firstPoint.x * canvasWidth
-                val canvasY = firstPoint.y * canvasHeight
-                println("DEBUG AnnotationCanvas: EXISTING stroke - PDF-relative: (${firstPoint.x}, ${firstPoint.y}) → canvas pixels: (${canvasX}, ${canvasY}) = (${firstPoint.x*100}%, ${firstPoint.y*100}%)")
-            }
-        }
         allStrokes.forEach { stroke ->
             val isSelected = drawingState.selectedStroke?.id == stroke.id
             if (stroke.points.isNotEmpty()) {
@@ -403,7 +386,15 @@ fun AnnotationCanvas(
         }
         
         // Draw current stroke being drawn (real-time preview)
-        currentPath?.let { path ->
+        if (currentPoints.isNotEmpty()) {
+            // Convert current PDF-relative points to canvas coordinates for drawing
+            val canvasPoints = currentPoints.map { point ->
+                point.copy(
+                    x = point.x * effectiveWidth + pdfOffsetX,
+                    y = point.y * effectiveHeight + pdfOffsetY
+                )
+            }
+            val path = createPathFromPoints(canvasPoints)
             val strokeColor = drawingState.color
             
             when (drawingState.tool) {

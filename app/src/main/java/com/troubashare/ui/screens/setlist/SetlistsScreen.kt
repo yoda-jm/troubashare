@@ -36,7 +36,8 @@ fun SetlistsScreen(
     val context = LocalContext.current
     val database = remember { TroubaShareDatabase.getInstance(context) }
     val fileManager = remember { FileManager(context) }
-    val songRepository = remember { SongRepository(database, fileManager) }
+    val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
+    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
     val groupRepository = remember { GroupRepository(database) }
     val setlistRepository = remember { SetlistRepository(database, songRepository) }
     val viewModel: SetlistsViewModel = viewModel { 

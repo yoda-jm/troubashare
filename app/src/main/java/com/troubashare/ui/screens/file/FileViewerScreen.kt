@@ -43,7 +43,7 @@ fun FileViewerScreen(
     val database = remember { TroubaShareDatabase.getInstance(context) }
     val fileManager = remember { FileManager(context) }
     val annotationRepository = remember { AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager) }
+    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
     
     val viewModel: FileViewerViewModel = viewModel { 
         println("DEBUG FileViewerScreen: Creating ViewModel with fileId='${songFile.id}', memberId='$currentMemberId', songId='${songFile.songId}'")

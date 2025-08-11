@@ -17,7 +17,8 @@ import com.google.gson.reflect.TypeToken
 
 class SongRepository(
     private val database: TroubaShareDatabase,
-    private val fileManager: FileManager
+    private val fileManager: FileManager,
+    private val annotationRepository: AnnotationRepository
 ) {
     
     private val songDao = database.songDao()
@@ -238,11 +239,42 @@ class SongRepository(
             
             songDao.deleteSongFile(entity)
             println("DEBUG SongRepository: Successfully deleted file from database")
+            
+            // If this was an annotation file, also clean up associated annotations
+            if (songFile.fileType == com.troubashare.domain.model.FileType.ANNOTATION) {
+                println("DEBUG SongRepository: Cleaning up annotations for deleted annotation layer")
+                
+                // Extract original PDF fileId from annotation filename
+                // Format: annotations_{originalFileId}_{memberId}_{timestamp}.json
+                val originalFileId = extractOriginalFileIdFromAnnotationFilename(songFile.fileName)
+                if (originalFileId != null) {
+                    println("DEBUG SongRepository: Extracted original fileId '$originalFileId' from annotation filename '${songFile.fileName}'")
+                    annotationRepository.clearAnnotationsForFile(originalFileId)
+                    println("DEBUG SongRepository: Successfully cleaned up annotations for original file")
+                } else {
+                    println("DEBUG SongRepository: WARNING - Could not extract original fileId from annotation filename '${songFile.fileName}'")
+                }
+            }
+            
             Result.success(Unit)
         } catch (e: Exception) {
             println("DEBUG SongRepository: Error deleting file: ${e.message}")
             e.printStackTrace()
             Result.failure(e)
+        }
+    }
+    
+    private fun extractOriginalFileIdFromAnnotationFilename(filename: String): String? {
+        // Format: annotations_{originalFileId}_{memberId}_{timestamp}.json
+        return try {
+            val parts = filename.split("_")
+            if (parts.size >= 3 && parts[0] == "annotations") {
+                parts[1] // The originalFileId is the second part
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 }

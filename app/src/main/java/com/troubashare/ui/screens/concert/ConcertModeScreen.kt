@@ -238,26 +238,34 @@ fun ConcertModeScreen(
                 // Display current song's file
                 val currentSong = uiState.songs[uiState.currentSongIndex]
                 if (currentSong.files.isNotEmpty()) {
-                    // For now, display the first available file
-                    // TODO: Add file selection or show all files
+                    // Display the first available file with annotations
                     val file = currentSong.files.first()
-                    
-                    // Use multi-page PDF viewer for concert mode to show all pages at once
+
+                    // Load annotations for this file
+                    val annotations by remember(file.id, memberId) {
+                        annotationRepository.getAnnotationsByFileAndMember(file.id, memberId)
+                    }.collectAsState(initial = emptyList())
+
+                    // Use annotated multi-page PDF viewer for concert mode
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = Color.White
+                        // No Surface wrapper needed - AnnotatedMultiPagePDFViewer handles its own background
+                        Box(
+                            modifier = Modifier.fillMaxSize()
                         ) {
-                            // Use MultiPagePDFViewer for PDFs to show all pages, regular FileViewer for other types
+                            // Use AnnotatedMultiPagePDFViewer for PDFs to show all pages with annotations
                             if (file.fileType.name.uppercase() == "PDF") {
-                                com.troubashare.ui.components.MultiPagePDFViewer(
+                                com.troubashare.ui.components.AnnotatedMultiPagePDFViewer(
                                     filePath = file.filePath,
+                                    fileId = file.id,
+                                    memberId = memberId,
+                                    annotations = annotations,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
+                                // For images, use regular FileViewer (annotation support could be added later)
                                 com.troubashare.ui.components.FileViewer(
                                     filePath = file.filePath,
                                     fileName = file.fileName,

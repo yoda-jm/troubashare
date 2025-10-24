@@ -36,6 +36,10 @@ class LibraryViewModel(
                 songRepository.searchSongs(groupId, query)
             }
         }
+        .map { songList ->
+            // Sort songs alphabetically by title (case-insensitive)
+            songList.sortedBy { it.title.lowercase() }
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),

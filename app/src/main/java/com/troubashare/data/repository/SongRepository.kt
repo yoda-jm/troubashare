@@ -10,6 +10,7 @@ import com.troubashare.data.file.FileManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import java.util.*
 import java.io.InputStream
 import com.google.gson.Gson
@@ -30,6 +31,15 @@ class SongRepository(
                 // For list view, load files count only for performance
                 entity.toDomainModel(emptyList())
             }
+        }
+    }
+    
+    suspend fun getSongsWithFilesByGroupId(groupId: String): List<Song> {
+        val entities = songDao.getSongsByGroupId(groupId).first()
+        return entities.map { entity ->
+            // Load full song data including files for cloud sync
+            val files = songDao.getFilesBySongId(entity.id)
+            entity.toDomainModel(files.map { it.toDomainModel() })
         }
     }
     

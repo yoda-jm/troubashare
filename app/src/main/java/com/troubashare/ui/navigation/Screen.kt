@@ -47,6 +47,21 @@ sealed class Screen(val route: String) {
         }
     }
     data object Settings : Screen("settings")
+    data object CloudSync : Screen("cloud_sync")
+    data object GroupSharing : Screen("group_sharing/{groupId}") {
+        const val GROUP_ID_ARG = "groupId"
+        
+        val arguments = listOf(
+            navArgument(GROUP_ID_ARG) {
+                type = NavType.StringType
+            }
+        )
+        
+        fun createRoute(groupId: String): String {
+            return route.replace("{$GROUP_ID_ARG}", groupId)
+        }
+    }
+    data object JoinGroup : Screen("join_group")
     
     data object SongDetails : Screen("song_details/{groupId}/{songId}") {
         const val GROUP_ID_ARG = "groupId"

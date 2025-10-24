@@ -14,6 +14,9 @@ import com.troubashare.ui.screens.setlist.SetlistEditorScreen
 import com.troubashare.ui.screens.settings.SettingsScreen
 import com.troubashare.ui.screens.file.FileViewerScreen
 import com.troubashare.ui.screens.concert.ConcertModeScreen
+import com.troubashare.ui.cloud.CloudSyncScreen
+import com.troubashare.ui.cloud.GroupSharingScreen
+import com.troubashare.ui.cloud.JoinGroupScreen
 import com.troubashare.domain.model.SongFile
 import java.net.URLDecoder
 
@@ -149,6 +152,53 @@ fun TroubaShareNavigation(
             SettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onNavigateToCloudSync = {
+                    navController.navigate(Screen.CloudSync.route)
+                }
+            )
+        }
+        
+        composable(Screen.CloudSync.route) {
+            CloudSyncScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToGroupSharing = { groupId ->
+                    navController.navigate(Screen.GroupSharing.createRoute(groupId))
+                },
+                onNavigateToJoinGroup = {
+                    navController.navigate(Screen.JoinGroup.route)
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.GroupSharing.route,
+            arguments = Screen.GroupSharing.arguments
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString(Screen.GroupSharing.GROUP_ID_ARG) ?: ""
+            GroupSharingScreen(
+                groupId = groupId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable(Screen.JoinGroup.route) {
+            JoinGroupScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onGroupJoined = { group ->
+                    // Navigate to the newly joined group's home screen
+                    navController.navigate(Screen.Home.createRoute(group.id)) {
+                        // Clear the back stack to prevent going back to join screen
+                        popUpTo(Screen.JoinGroup.route) {
+                            inclusive = true
+                        }
+                    }
                 }
             )
         }

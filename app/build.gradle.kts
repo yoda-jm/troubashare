@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("kotlin-kapt")
+    id("dagger.hilt.android.plugin")
+    kotlin("plugin.serialization") version "1.9.22"
 }
 
 android {
@@ -53,6 +55,12 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/LICENSE"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/NOTICE.txt"
+            excludes += "/META-INF/ASL2.0"
         }
     }
 }
@@ -80,12 +88,27 @@ dependencies {
     
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+
+    // DataStore for preferences
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
     
     // Image Loading
     implementation(libs.coil.compose)
     
     // JSON
     implementation(libs.gson)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+    
+    // Dependency Injection
+    implementation("com.google.dagger:hilt-android:2.48")
+    kapt("com.google.dagger:hilt-compiler:2.48")
+    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    
+    // Google Drive API
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20220815-2.0.0")
+    implementation("com.google.api-client:google-api-client-android:1.32.1")
+    implementation("com.google.http-client:google-http-client-gson:1.42.3")
     
     // File handling
     implementation(libs.androidx.documentfile)

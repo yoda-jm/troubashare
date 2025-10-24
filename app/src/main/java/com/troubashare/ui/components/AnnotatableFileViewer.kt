@@ -154,7 +154,8 @@ fun AnnotatablePDFViewer(
                         onDeleteStroke = viewModel::deleteStroke,
                         onSaveAnnotations = {
                             // TODO: Implement save logic with file picker
-                        }
+                        },
+                        onStrokeUpdated = viewModel::updateStroke
                     )
                 }
             }
@@ -264,7 +265,8 @@ fun AnnotatablePDFViewer(
                     onDeleteStroke = viewModel::deleteStroke,
                     onSaveAnnotations = {
                         // TODO: Implement save logic with file picker
-                    }
+                    },
+                    onStrokeUpdated = viewModel::updateStroke
                 )
             }
             
@@ -789,7 +791,8 @@ fun AnnotatableImageViewer(
             onDeleteStroke = viewModel::deleteStroke,
             onSaveAnnotations = {
                 // TODO: Implement save logic with file picker
-            }
+            },
+            onStrokeUpdated = viewModel::updateStroke
         )
         
         // Image Content with Annotations

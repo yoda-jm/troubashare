@@ -19,6 +19,7 @@ data class AnnotationStroke(
     val points: List<AnnotationPoint>,
     val color: Long = Color.Black.toArgb().toUInt().toLong(), // Changed default to black
     val strokeWidth: Float = 5f, // Increased default stroke width
+    val opacity: Float = 1f, // 0.0 to 1.0, where 0.4-0.5 is highlighter mode
     val tool: DrawingTool = DrawingTool.PEN,
     val text: String? = null, // For TEXT tool annotations
     val createdAt: Long = System.currentTimeMillis()
@@ -33,17 +34,21 @@ data class AnnotationPoint(
 
 enum class DrawingTool(val displayName: String) {
     PEN("Pen"),
-    HIGHLIGHTER("Highlighter"),
-    ERASER("Eraser"),
     TEXT("Text"),
     SELECT("Select"),
-    PAN_ZOOM("Pan/Zoom")
+    PAN_ZOOM("Pan/Zoom"),
+    // Legacy tools kept for backward compatibility with existing annotations
+    @Deprecated("Use PEN with opacity instead")
+    HIGHLIGHTER("Highlighter"),
+    @Deprecated("Use SELECT tool and delete button instead")
+    ERASER("Eraser")
 }
 
 data class DrawingState(
     val tool: DrawingTool = DrawingTool.PAN_ZOOM, // Default to view mode
     val color: Color = Color.Black, // Changed default to black for better visibility
     val strokeWidth: Float = 5f, // Increased default stroke width
+    val opacity: Float = 1f, // 0.0 (transparent) to 1.0 (opaque), 0.4-0.5 is "highlighter mode"
     val isDrawing: Boolean = false, // Start in view mode
     val currentStroke: AnnotationStroke? = null,
     val selectedStroke: AnnotationStroke? = null, // Currently selected stroke for editing

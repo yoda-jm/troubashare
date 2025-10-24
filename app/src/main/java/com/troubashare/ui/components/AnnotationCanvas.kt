@@ -135,50 +135,86 @@ fun AnnotationCanvas(
                     }
                     
                     DrawingTool.SELECT -> {
-                        // Handle selection and movement gestures
-                        detectDragGestures(
-                            onDragStart = { startOffset ->
-                                // Hit test to find stroke at touch point for movement
+                        // Handle tap-to-select and drag-to-move
+                        detectTapGestures(
+                            onTap = { tapOffset ->
+                                // Tap to select a stroke
                                 val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-                                val selectedStroke = findStrokeAtPoint(allStrokes, startOffset, effectiveWidth, effectiveHeight)
-                                if (selectedStroke != null && onStrokeUpdated != null) {
-                                    // Store original stroke for movement
-                                    currentPoints = listOf(
-                                        AnnotationPoint(
-                                            x = startOffset.x,
-                                            y = startOffset.y,
-                                            pressure = 1f,
-                                            timestamp = System.currentTimeMillis()
-                                        )
+                                val tappedStroke = findStrokeAtPoint(allStrokes, tapOffset, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
+
+                                onDrawingStateChanged(
+                                    drawingState.copy(
+                                        selectedStroke = if (drawingState.selectedStroke?.id == tappedStroke?.id) {
+                                            null // Deselect if tapping same stroke
+                                        } else {
+                                            tappedStroke // Select the tapped stroke
+                                        }
                                     )
-                                }
-                            },
-                            onDrag = { change, _ ->
-                                if (currentPoints.isNotEmpty() && onStrokeUpdated != null) {
-                                    change.consume()
+                                )
+                            }
+                        )
+
+                        // Drag gesture for moving selected stroke
+                        if (drawingState.selectedStroke != null && onStrokeUpdated != null) {
+                            detectDragGestures(
+                                onDragStart = { startOffset ->
+                                    // Verify the selected stroke is at this position
                                     val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-                                    val startOffset = Offset(currentPoints.first().x, currentPoints.first().y)
-                                    val selectedStroke = findStrokeAtPoint(allStrokes, startOffset, effectiveWidth, effectiveHeight)
-                                    
-                                    selectedStroke?.let { stroke ->
-                                        // Calculate translation
+                                    val strokeAtPoint = findStrokeAtPoint(allStrokes, startOffset, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
+
+                                    if (strokeAtPoint?.id == drawingState.selectedStroke.id) {
+                                        // Store starting position for drag calculation
+                                        currentPoints = listOf(
+                                            AnnotationPoint(
+                                                x = startOffset.x,
+                                                y = startOffset.y,
+                                                pressure = 1f,
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                        )
+                                    }
+                                },
+                                onDrag = { change, _ ->
+                                    if (currentPoints.isNotEmpty()) {
+                                        change.consume()
+                                        val startOffset = Offset(currentPoints.first().x, currentPoints.first().y)
                                         val translation = change.position - startOffset
-                                        val updatedStroke = stroke.copy(
-                                            points = stroke.points.map { point ->
+
+                                        // Calculate PDF-relative translation
+                                        val pdfTranslationX = translation.x / effectiveWidth
+                                        val pdfTranslationY = translation.y / effectiveHeight
+
+                                        // Update the selected stroke position
+                                        val updatedStroke = drawingState.selectedStroke.copy(
+                                            points = drawingState.selectedStroke.points.map { point ->
                                                 point.copy(
-                                                    x = point.x + translation.x,
-                                                    y = point.y + translation.y
+                                                    x = point.x + pdfTranslationX,
+                                                    y = point.y + pdfTranslationY
                                                 )
                                             }
                                         )
-                                        onStrokeUpdated.invoke(stroke, updatedStroke)
+
+                                        onStrokeUpdated.invoke(drawingState.selectedStroke, updatedStroke)
+
+                                        // Update drawing state with moved stroke
+                                        onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+
+                                        // Update start position for next drag calculation
+                                        currentPoints = listOf(
+                                            AnnotationPoint(
+                                                x = change.position.x,
+                                                y = change.position.y,
+                                                pressure = 1f,
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                        )
                                     }
+                                },
+                                onDragEnd = {
+                                    currentPoints = emptyList()
                                 }
-                            },
-                            onDragEnd = {
-                                currentPoints = emptyList()
-                            }
-                        )
+                            )
+                        }
                     }
                     
                     DrawingTool.PAN_ZOOM -> {
@@ -262,19 +298,22 @@ fun AnnotationCanvas(
                 
                 when (stroke.tool) {
                     DrawingTool.PEN -> {
-                        // Draw selection highlight first (behind the stroke)
+                        // Draw bounding box for selected stroke
                         if (isSelected) {
-                            drawPath(
-                                path = path,
-                                color = Color.Blue.copy(alpha = 0.3f),
+                            val bounds = calculateStrokeBounds(canvasPoints)
+                            drawRect(
+                                color = Color.Blue,
+                                topLeft = bounds.topLeft,
+                                size = bounds.size,
                                 style = Stroke(
-                                    width = stroke.strokeWidth + 8f,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
+                                    width = 2f,
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                                 )
                             )
+                            // Draw corner handles
+                            drawCornerHandles(bounds.topLeft, bounds.size)
                         }
-                        
+
                         drawPath(
                             path = path,
                             color = strokeColor,
@@ -286,19 +325,22 @@ fun AnnotationCanvas(
                         )
                     }
                     DrawingTool.HIGHLIGHTER -> {
-                        // Draw selection highlight first (behind the stroke)
+                        // Draw bounding box for selected stroke
                         if (isSelected) {
-                            drawPath(
-                                path = path,
-                                color = Color.Blue.copy(alpha = 0.3f),
+                            val bounds = calculateStrokeBounds(canvasPoints)
+                            drawRect(
+                                color = Color.Blue,
+                                topLeft = bounds.topLeft,
+                                size = bounds.size,
                                 style = Stroke(
-                                    width = (stroke.strokeWidth * 1.3f) + 8f,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
+                                    width = 2f,
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                                 )
                             )
+                            // Draw corner handles
+                            drawCornerHandles(bounds.topLeft, bounds.size)
                         }
-                        
+
                         drawPath(
                             path = path,
                             color = strokeColor.copy(alpha = 0.5f),
@@ -310,19 +352,22 @@ fun AnnotationCanvas(
                         )
                     }
                     DrawingTool.ERASER -> {
-                        // Draw selection highlight first (behind the stroke)
+                        // Draw bounding box for selected stroke
                         if (isSelected) {
-                            drawPath(
-                                path = path,
-                                color = Color.Blue.copy(alpha = 0.3f),
+                            val bounds = calculateStrokeBounds(canvasPoints)
+                            drawRect(
+                                color = Color.Red,  // Red for eraser strokes
+                                topLeft = bounds.topLeft,
+                                size = bounds.size,
                                 style = Stroke(
-                                    width = (stroke.strokeWidth * 3f) + 8f,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
+                                    width = 2f,
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                                 )
                             )
+                            // Draw corner handles
+                            drawCornerHandles(bounds.topLeft, bounds.size)
                         }
-                        
+
                         // For eraser, use the background color or white with alpha blending
                         drawPath(
                             path = path,
@@ -345,22 +390,42 @@ fun AnnotationCanvas(
                                 val position = canvasPoints.first()  // Use canvas-converted coordinates
                                 // Use black color for maximum visibility in drawing mode too
                                 val textColor = Color.Black
-                                
+
                                 // Ensure minimum readable size
                                 val fontSize = maxOf(stroke.strokeWidth * 3, 18f).sp
-                                
-                                // Draw selection highlight background for text
+
+                                // Draw bounding box for selected text
                                 if (isSelected) {
                                     val textWidth = text.length * fontSize.value * 0.6f // Approximate text width
                                     val textHeight = fontSize.value * 1.2f
-                                    
+
+                                    val bounds = androidx.compose.ui.geometry.Rect(
+                                        offset = Offset(position.x - 8f, position.y - 8f),
+                                        size = androidx.compose.ui.geometry.Size(textWidth + 16f, textHeight + 16f)
+                                    )
+
+                                    // Draw bounding box with dashed border
                                     drawRect(
-                                        color = Color.Blue.copy(alpha = 0.2f),
-                                        topLeft = Offset(position.x - 4f, position.y - 4f),
-                                        size = androidx.compose.ui.geometry.Size(textWidth + 8f, textHeight + 8f)
+                                        color = Color.Blue,
+                                        topLeft = bounds.topLeft,
+                                        size = bounds.size,
+                                        style = Stroke(
+                                            width = 2f,
+                                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                        )
+                                    )
+
+                                    // Draw corner handles
+                                    drawCornerHandles(bounds.topLeft, bounds.size)
+
+                                    // Draw semi-transparent background
+                                    drawRect(
+                                        color = Color.Blue.copy(alpha = 0.1f),
+                                        topLeft = bounds.topLeft,
+                                        size = bounds.size
                                     )
                                 }
-                                
+
                                 drawText(
                                     textMeasurer = textMeasurer,
                                     text = text,
@@ -462,19 +527,40 @@ private fun createPathFromPoints(points: List<AnnotationPoint>): Path {
     return path
 }
 
-private fun findStrokeAtPoint(strokes: List<AnnotationStroke>, point: Offset, canvasWidth: Float, canvasHeight: Float): AnnotationStroke? {
-    val hitRadius = 50f // Adjust hit detection radius as needed
-    
-    return strokes.reversed().firstOrNull { stroke ->
+/**
+ * Find the best matching stroke at a tap point using intelligent scoring.
+ * Considers:
+ * - Distance to tap point (closer is better)
+ * - Stroke size (smaller/more precise strokes preferred)
+ * - Stroke density (points closer together = more likely to be tapped intentionally)
+ * - Z-order (newer strokes on top preferred slightly)
+ */
+private fun findStrokeAtPoint(
+    strokes: List<AnnotationStroke>,
+    point: Offset,
+    effectiveWidth: Float,
+    effectiveHeight: Float,
+    pdfOffsetX: Float,
+    pdfOffsetY: Float
+): AnnotationStroke? {
+    val hitRadius = 50f // Maximum distance to consider
+
+    // Score each stroke and pick the best match
+    data class StrokeCandidate(
+        val stroke: AnnotationStroke,
+        val score: Float,
+        val minDistance: Float
+    )
+
+    val candidates = strokes.mapNotNull { stroke ->
         when (stroke.tool) {
             DrawingTool.TEXT -> {
                 // For text, check if point is within text bounds
                 if (stroke.points.isNotEmpty()) {
                     val pdfPosition = stroke.points.first()
-                    // Convert PDF-relative coordinates to canvas pixels
                     val canvasPosition = Offset(
-                        x = pdfPosition.x * canvasWidth,
-                        y = pdfPosition.y * canvasHeight
+                        x = pdfPosition.x * effectiveWidth + pdfOffsetX,
+                        y = pdfPosition.y * effectiveHeight + pdfOffsetY
                     )
                     val textBounds = androidx.compose.ui.geometry.Rect(
                         offset = canvasPosition,
@@ -483,23 +569,160 @@ private fun findStrokeAtPoint(strokes: List<AnnotationStroke>, point: Offset, ca
                             height = stroke.strokeWidth * 4
                         )
                     )
-                    textBounds.contains(point)
-                } else false
-            }
-            DrawingTool.PEN, DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
-                // For drawing strokes, check distance to any point on the path
-                stroke.points.any { strokePoint ->
-                    // Convert PDF-relative coordinates to canvas pixels
-                    val canvasX = strokePoint.x * canvasWidth
-                    val canvasY = strokePoint.y * canvasHeight
-                    val distance = kotlin.math.sqrt(
-                        (point.x - canvasX) * (point.x - canvasX) + 
-                        (point.y - canvasY) * (point.y - canvasY)
-                    )
-                    distance <= hitRadius
+
+                    if (textBounds.contains(point)) {
+                        // Calculate distance to center of text
+                        val centerX = textBounds.left + textBounds.width / 2f
+                        val centerY = textBounds.top + textBounds.height / 2f
+                        val distanceToCenter = kotlin.math.sqrt(
+                            (point.x - centerX) * (point.x - centerX) +
+                            (point.y - centerY) * (point.y - centerY)
+                        )
+
+                        // Text has high priority when directly tapped
+                        val score = 1000f - distanceToCenter
+                        StrokeCandidate(stroke, score, distanceToCenter)
+                    } else {
+                        null
+                    }
+                } else {
+                    null
                 }
             }
-            else -> false
+
+            DrawingTool.PEN, DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
+                // Find minimum distance to any point on the stroke
+                var minDistance = Float.MAX_VALUE
+                var pointsWithinRadius = 0
+
+                stroke.points.forEach { strokePoint ->
+                    val canvasX = strokePoint.x * effectiveWidth + pdfOffsetX
+                    val canvasY = strokePoint.y * effectiveHeight + pdfOffsetY
+                    val distance = kotlin.math.sqrt(
+                        (point.x - canvasX) * (point.x - canvasX) +
+                        (point.y - canvasY) * (point.y - canvasY)
+                    )
+
+                    if (distance < minDistance) {
+                        minDistance = distance
+                    }
+                    if (distance <= hitRadius) {
+                        pointsWithinRadius++
+                    }
+                }
+
+                if (minDistance <= hitRadius) {
+                    // Calculate stroke bounds to determine size
+                    val canvasPoints = stroke.points.map { p ->
+                        AnnotationPoint(
+                            x = p.x * effectiveWidth + pdfOffsetX,
+                            y = p.y * effectiveHeight + pdfOffsetY,
+                            pressure = p.pressure,
+                            timestamp = p.timestamp
+                        )
+                    }
+                    val bounds = calculateStrokeBounds(canvasPoints)
+                    val strokeArea = bounds.width * bounds.height
+
+                    // Scoring factors:
+                    // 1. Closer distance = higher score (inverse distance)
+                    val distanceScore = (hitRadius - minDistance) / hitRadius * 100f
+
+                    // 2. Smaller strokes = higher score (prefer precise strokes)
+                    val sizeScore = (1f / (1f + strokeArea / 10000f)) * 50f
+
+                    // 3. More points within radius = higher score (indicates user tapped on dense part)
+                    val densityScore = pointsWithinRadius * 2f
+
+                    // 4. Stroke width penalty (prefer thinner strokes for precision)
+                    val widthScore = (20f - stroke.strokeWidth) / 20f * 20f
+
+                    val totalScore = distanceScore + sizeScore + densityScore + widthScore
+
+                    StrokeCandidate(stroke, totalScore, minDistance)
+                } else {
+                    null
+                }
+            }
+
+            else -> null
         }
     }
+
+    // Return the stroke with the highest score
+    return candidates.maxByOrNull { it.score }?.stroke
+}
+
+/**
+ * Calculate the bounding box for a stroke's points
+ */
+private fun calculateStrokeBounds(points: List<AnnotationPoint>): androidx.compose.ui.geometry.Rect {
+    if (points.isEmpty()) {
+        return androidx.compose.ui.geometry.Rect.Zero
+    }
+
+    var minX = Float.MAX_VALUE
+    var minY = Float.MAX_VALUE
+    var maxX = Float.MIN_VALUE
+    var maxY = Float.MIN_VALUE
+
+    points.forEach { point ->
+        if (point.x < minX) minX = point.x
+        if (point.y < minY) minY = point.y
+        if (point.x > maxX) maxX = point.x
+        if (point.y > maxY) maxY = point.y
+    }
+
+    // Add padding around the stroke
+    val padding = 15f
+    minX -= padding
+    minY -= padding
+    maxX += padding
+    maxY += padding
+
+    return androidx.compose.ui.geometry.Rect(
+        left = minX,
+        top = minY,
+        right = maxX,
+        bottom = maxY
+    )
+}
+
+/**
+ * Draw corner handles for the bounding box
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCornerHandles(
+    topLeft: Offset,
+    size: androidx.compose.ui.geometry.Size
+) {
+    val handleSize = 12f
+    val handleColor = Color.Blue
+
+    // Top-left corner
+    drawCircle(
+        color = handleColor,
+        radius = handleSize / 2,
+        center = topLeft
+    )
+
+    // Top-right corner
+    drawCircle(
+        color = handleColor,
+        radius = handleSize / 2,
+        center = Offset(topLeft.x + size.width, topLeft.y)
+    )
+
+    // Bottom-left corner
+    drawCircle(
+        color = handleColor,
+        radius = handleSize / 2,
+        center = Offset(topLeft.x, topLeft.y + size.height)
+    )
+
+    // Bottom-right corner
+    drawCircle(
+        color = handleColor,
+        radius = handleSize / 2,
+        center = Offset(topLeft.x + size.width, topLeft.y + size.height)
+    )
 }

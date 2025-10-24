@@ -10,6 +10,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,6 +32,8 @@ class CloudSyncManager @Inject constructor(
         private const val SYNC_INTERVAL_MS = 30_000L // 30 seconds
         private const val MANIFEST_FILE = "group-manifest.json"
         private const val CHANGE_LOG_FILE = "change-log.json"
+        private const val MAX_RETRY_ATTEMPTS = 3
+        private const val INITIAL_RETRY_DELAY_MS = 1000L // 1 second
     }
     
     private val json = Json { ignoreUnknownKeys = true }
@@ -630,28 +634,264 @@ class CloudSyncManager @Inject constructor(
     
     // Entity-specific change application methods
     private suspend fun applySongChange(change: ChangeLogEntry) {
-        // TODO: Implement song change application
-        Log.d(TAG, "Applying song change: ${change.description}")
+        try {
+            Log.d(TAG, "Applying song change: ${change.description}")
+
+            when (change.changeType) {
+                ChangeType.CREATE, ChangeType.UPDATE -> {
+                    // Download song from cloud
+                    val cloudSettings = getGroupCloudSettings(change.metadata["groupId"] ?: "") ?: return
+                    val songsFolderId = findSubFolder(cloudSettings.folderId, "songs") ?: return
+
+                    val downloadResult = downloadSongMetadata(change.entityId, songsFolderId, change.metadata["groupId"] ?: "")
+                    if (downloadResult.isSuccess) {
+                        val song = downloadResult.getOrThrow()
+                        // Create or update the song in local database
+                        songRepository.createSong(
+                            groupId = song.groupId,
+                            title = song.title,
+                            artist = song.artist,
+                            key = song.key,
+                            tempo = song.tempo
+                        )
+                        Log.d(TAG, "Successfully applied song change: ${song.title}")
+                    } else {
+                        Log.w(TAG, "Failed to download song metadata for: ${change.entityId}")
+                    }
+                }
+
+                ChangeType.DELETE -> {
+                    // Delete song from local database
+                    val song = songRepository.getSongById(change.entityId)
+                    if (song != null) {
+                        songRepository.deleteSong(song)
+                        Log.d(TAG, "Successfully deleted song: ${change.entityName}")
+                    } else {
+                        Log.w(TAG, "Song not found for deletion: ${change.entityId}")
+                    }
+                }
+
+                else -> Log.w(TAG, "Unsupported song change type: ${change.changeType}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to apply song change", e)
+        }
     }
-    
+
     private suspend fun applySetlistChange(change: ChangeLogEntry) {
-        // TODO: Implement setlist change application
-        Log.d(TAG, "Applying setlist change: ${change.description}")
+        try {
+            Log.d(TAG, "Applying setlist change: ${change.description}")
+
+            when (change.changeType) {
+                ChangeType.CREATE, ChangeType.UPDATE -> {
+                    // Download setlist from cloud
+                    val cloudSettings = getGroupCloudSettings(change.metadata["groupId"] ?: "") ?: return
+                    val setlistsFolderId = findSubFolder(cloudSettings.folderId, "setlists") ?: return
+
+                    // Download setlist JSON file
+                    val filesResult = googleDriveProvider.listFiles(setlistsFolderId, "${change.entityId}.json")
+                    if (filesResult.isSuccess) {
+                        val setlistFile = filesResult.getOrThrow().find { it.name == "${change.entityId}.json" }
+                        if (setlistFile != null) {
+                            val tempFile = File(context.cacheDir, "temp-${setlistFile.name}")
+                            val downloadResult = googleDriveProvider.downloadFile(
+                                CloudFile(
+                                    id = setlistFile.id,
+                                    name = setlistFile.name,
+                                    path = "/${setlistFile.name}",
+                                    size = setlistFile.size,
+                                    mimeType = "application/json",
+                                    modifiedTime = setlistFile.modifiedTime,
+                                    checksum = setlistFile.checksum
+                                ),
+                                tempFile.absolutePath
+                            )
+
+                            if (downloadResult.isSuccess) {
+                                val setlistJson = tempFile.readText()
+                                val setlistData = json.decodeFromString<CloudSetlistData>(setlistJson)
+
+                                // Create or update setlist in local database
+                                setlistRepository.createSetlist(
+                                    name = setlistData.name,
+                                    groupId = change.metadata["groupId"] ?: "",
+                                    description = setlistData.description,
+                                    venue = null,
+                                    eventDate = null
+                                )
+                                tempFile.delete()
+                                Log.d(TAG, "Successfully applied setlist change: ${setlistData.name}")
+                            }
+                        }
+                    }
+                }
+
+                ChangeType.DELETE -> {
+                    // Delete setlist from local database
+                    val setlist = setlistRepository.getSetlistById(change.entityId)
+                    if (setlist != null) {
+                        setlistRepository.deleteSetlist(setlist)
+                        Log.d(TAG, "Successfully deleted setlist: ${change.entityName}")
+                    } else {
+                        Log.w(TAG, "Setlist not found for deletion: ${change.entityId}")
+                    }
+                }
+
+                else -> Log.w(TAG, "Unsupported setlist change type: ${change.changeType}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to apply setlist change", e)
+        }
     }
-    
+
     private suspend fun applyAnnotationChange(change: ChangeLogEntry) {
-        // TODO: Implement annotation change application
-        Log.d(TAG, "Applying annotation change: ${change.description}")
+        try {
+            Log.d(TAG, "Applying annotation change: ${change.description}")
+
+            when (change.changeType) {
+                ChangeType.CREATE, ChangeType.UPDATE -> {
+                    // Download annotation from cloud
+                    val cloudSettings = getGroupCloudSettings(change.metadata["groupId"] ?: "") ?: return
+                    val songsFolderId = findSubFolder(cloudSettings.folderId, "songs") ?: return
+
+                    val fileId = change.metadata["fileId"] ?: return
+                    val memberId = change.memberId ?: return
+                    val songId = change.metadata["songId"] ?: return
+
+                    // Download annotation file
+                    val annotationFileName = "${songId}_${memberId}_${fileId}_annotations.json"
+                    val contentResult = googleDriveProvider.listFiles(songsFolderId, annotationFileName)
+
+                    if (contentResult.isSuccess) {
+                        val annotationFile = contentResult.getOrThrow().find { it.name == annotationFileName }
+                        if (annotationFile != null) {
+                            val downloadResult = googleDriveProvider.downloadFileContent(annotationFile.id)
+                            if (downloadResult.isSuccess) {
+                                val annotationContent = downloadResult.getOrThrow()
+                                val annotationLayer = json.decodeFromString<CloudAnnotationLayer>(annotationContent)
+
+                                // Create annotation in local database
+                                val localAnnotation = annotationRepository.createAnnotation(
+                                    fileId = fileId,
+                                    memberId = memberId,
+                                    pageNumber = annotationLayer.annotations.firstOrNull()?.pageNumber ?: 0
+                                )
+
+                                // Add all strokes from cloud
+                                annotationLayer.annotations.forEach { cloudAnnotation ->
+                                    val stroke = AnnotationStroke(
+                                        id = cloudAnnotation.annotationId,
+                                        points = cloudAnnotation.strokePath.split(",").mapNotNull { pointStr ->
+                                            val coords = pointStr.split(":")
+                                            if (coords.size == 2) {
+                                                AnnotationPoint(
+                                                    x = coords[0].toFloatOrNull() ?: 0f,
+                                                    y = coords[1].toFloatOrNull() ?: 0f
+                                                )
+                                            } else null
+                                        },
+                                        color = cloudAnnotation.strokeColor.toLong(),
+                                        strokeWidth = cloudAnnotation.strokeWidth,
+                                        tool = DrawingTool.valueOf(cloudAnnotation.type.takeIf {
+                                            DrawingTool.values().any { tool -> tool.name == it }
+                                        } ?: "PEN"),
+                                        text = cloudAnnotation.text.takeIf { it.isNotEmpty() },
+                                        createdAt = cloudAnnotation.createdAt
+                                    )
+                                    annotationRepository.addStrokeToAnnotation(localAnnotation.id, stroke)
+                                }
+
+                                Log.d(TAG, "Successfully applied annotation change for file: $fileId")
+                            }
+                        }
+                    }
+                }
+
+                ChangeType.DELETE -> {
+                    // Delete annotation from local database
+                    // Clear all annotations for this entity (file)
+                    annotationRepository.clearAnnotationsForFile(change.entityId)
+                    Log.d(TAG, "Successfully deleted annotations for: ${change.entityName}")
+                }
+
+                else -> Log.w(TAG, "Unsupported annotation change type: ${change.changeType}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to apply annotation change", e)
+        }
     }
-    
+
     private suspend fun applyMemberChange(change: ChangeLogEntry) {
-        // TODO: Implement member change application
-        Log.d(TAG, "Applying member change: ${change.description}")
+        try {
+            Log.d(TAG, "Applying member change: ${change.description}")
+
+            when (change.changeType) {
+                ChangeType.CREATE, ChangeType.UPDATE -> {
+                    // Download group manifest to get member info
+                    val cloudSettings = getGroupCloudSettings(change.metadata["groupId"] ?: "") ?: return
+                    val manifestResult = downloadGroupManifest(cloudSettings.folderId)
+
+                    if (manifestResult.isSuccess) {
+                        val manifest = manifestResult.getOrThrow()
+                        val groupId = change.metadata["groupId"] ?: ""
+                        val group = groupRepository.getGroupById(groupId)
+
+                        if (group != null) {
+                            // Update group with new member list from manifest
+                            val memberNames = manifest.members.map { it.name }
+                            groupRepository.updateGroup(groupId, group.name, memberNames)
+                            Log.d(TAG, "Successfully updated group members from manifest")
+                        }
+                    }
+                }
+
+                ChangeType.DELETE -> {
+                    // Member deletion is handled by updating the group with the new manifest
+                    Log.d(TAG, "Member deletion handled via group update: ${change.entityName}")
+                }
+
+                else -> Log.w(TAG, "Unsupported member change type: ${change.changeType}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to apply member change", e)
+        }
     }
-    
+
     private suspend fun applyGroupChange(change: ChangeLogEntry) {
-        // TODO: Implement group change application
-        Log.d(TAG, "Applying group change: ${change.description}")
+        try {
+            Log.d(TAG, "Applying group change: ${change.description}")
+
+            when (change.changeType) {
+                ChangeType.UPDATE -> {
+                    // Download updated group manifest
+                    val cloudSettings = getGroupCloudSettings(change.entityId) ?: return
+                    val manifestResult = downloadGroupManifest(cloudSettings.folderId)
+
+                    if (manifestResult.isSuccess) {
+                        val manifest = manifestResult.getOrThrow()
+                        // Update group name and members
+                        val memberNames = manifest.members.map { it.name }
+                        groupRepository.updateGroup(change.entityId, manifest.name, memberNames)
+                        Log.d(TAG, "Successfully updated group: ${manifest.name}")
+                    }
+                }
+
+                ChangeType.DELETE -> {
+                    // Delete entire group from local database
+                    val group = groupRepository.getGroupById(change.entityId)
+                    if (group != null) {
+                        groupRepository.deleteGroup(group)
+                        Log.d(TAG, "Successfully deleted group: ${change.entityName}")
+                    } else {
+                        Log.w(TAG, "Group not found for deletion: ${change.entityId}")
+                    }
+                }
+
+                else -> Log.w(TAG, "Unsupported group change type: ${change.changeType}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to apply group change", e)
+        }
     }
     
     /**
@@ -711,27 +951,31 @@ class CloudSyncManager @Inject constructor(
                         if (file.exists()) {
                             // Create unique filename for each member's PDF
                             val remoteName = "${song.id}_${pdfFile.memberId}.pdf"
-                            
-                            // Check if PDF already exists in cloud
-                            val existingFiles = googleDriveProvider.listFiles(songsFolderId).getOrNull()
-                            val existingPdf = existingFiles?.find { it.name == remoteName }
-                            
-                            if (existingPdf != null) {
-                                Log.d(TAG, "PDF ${remoteName} already exists in cloud, skipping upload")
-                                songUploadedSuccessfully = true
-                            } else {
-                                val uploadResult = googleDriveProvider.uploadFile(
-                                    localPath = pdfFile.filePath,
-                                    remotePath = remoteName,
-                                    parentFolderId = songsFolderId
-                                )
-                                
+
+                            // Check if PDF needs upload (using checksum comparison)
+                            if (needsUpload(file, remoteName, songsFolderId)) {
+                                Log.d(TAG, "Uploading PDF ${remoteName} (changed or new)")
+
+                                // Upload with retry logic
+                                val uploadResult = retryWithBackoff(
+                                    operation = "Upload PDF: $remoteName"
+                                ) {
+                                    googleDriveProvider.uploadFile(
+                                        localPath = pdfFile.filePath,
+                                        remotePath = remoteName,
+                                        parentFolderId = songsFolderId
+                                    )
+                                }
+
                                 if (uploadResult.isSuccess) {
                                     Log.d(TAG, "Successfully uploaded PDF for ${song.title} (member: ${pdfFile.memberId})")
                                     songUploadedSuccessfully = true
                                 } else {
                                     Log.e(TAG, "Failed to upload PDF for ${song.title} (member: ${pdfFile.memberId}) - ${uploadResult.exceptionOrNull()?.message}")
                                 }
+                            } else {
+                                Log.d(TAG, "PDF ${remoteName} unchanged, skipping upload")
+                                songUploadedSuccessfully = true
                             }
                         } else {
                             Log.w(TAG, "PDF file not found: ${pdfFile.filePath} for member: ${pdfFile.memberId}")
@@ -1739,5 +1983,114 @@ class CloudSyncManager @Inject constructor(
         val shareCode: ShareCode,
         val isAdmin: Boolean
     )
+
+    /**
+     * Retry a suspend operation with exponential backoff
+     */
+    private suspend fun <T> retryWithBackoff(
+        maxAttempts: Int = MAX_RETRY_ATTEMPTS,
+        initialDelay: Long = INITIAL_RETRY_DELAY_MS,
+        operation: String,
+        block: suspend () -> Result<T>
+    ): Result<T> {
+        var currentDelay = initialDelay
+        repeat(maxAttempts) { attempt ->
+            val result = try {
+                block()
+            } catch (e: Exception) {
+                Result.failure<T>(e)
+            }
+
+            if (result.isSuccess) {
+                if (attempt > 0) {
+                    Log.d(TAG, "Operation '$operation' succeeded after ${attempt + 1} attempts")
+                }
+                return result
+            }
+
+            if (attempt < maxAttempts - 1) {
+                Log.w(TAG, "Attempt ${attempt + 1}/$maxAttempts failed for '$operation': ${result.exceptionOrNull()?.message}. Retrying in ${currentDelay}ms...")
+                delay(currentDelay)
+                currentDelay *= 2 // Exponential backoff
+            } else {
+                Log.e(TAG, "Operation '$operation' failed after $maxAttempts attempts: ${result.exceptionOrNull()?.message}")
+                return result
+            }
+        }
+
+        return Result.failure(Exception("Operation '$operation' failed after $maxAttempts attempts"))
+    }
+
+    /**
+     * Calculate MD5 checksum for a file
+     */
+    private fun calculateMD5(file: File): String {
+        return try {
+            val md = MessageDigest.getInstance("MD5")
+            val fis = FileInputStream(file)
+            val buffer = ByteArray(8192)
+            var read: Int
+
+            while (fis.read(buffer).also { read = it } > 0) {
+                md.update(buffer, 0, read)
+            }
+
+            fis.close()
+
+            // Convert byte array to hex string
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to calculate MD5", e)
+            ""
+        }
+    }
+
+    /**
+     * Check if a file needs to be uploaded by comparing checksums
+     */
+    private suspend fun needsUpload(
+        localFile: File,
+        remoteName: String,
+        parentFolderId: String
+    ): Boolean {
+        return try {
+            // Calculate local file checksum
+            val localChecksum = calculateMD5(localFile)
+            if (localChecksum.isEmpty()) {
+                Log.w(TAG, "Could not calculate local checksum, assuming upload needed")
+                return true
+            }
+
+            // Get remote file info
+            val existingFiles = googleDriveProvider.listFiles(parentFolderId).getOrNull()
+            val remoteFile = existingFiles?.find { it.name == remoteName }
+
+            if (remoteFile == null) {
+                // File doesn't exist remotely, needs upload
+                return true
+            }
+
+            // Compare checksums
+            val remoteChecksum = remoteFile.checksum
+            if (remoteChecksum == null) {
+                Log.w(TAG, "Remote file has no checksum, assuming upload needed")
+                return true
+            }
+
+            val checksumsDifferent = localChecksum != remoteChecksum
+
+            if (checksumsDifferent) {
+                Log.d(TAG, "File $remoteName has changed (local: ${localChecksum.take(8)}..., remote: ${remoteChecksum.take(8)}...)")
+            } else {
+                Log.d(TAG, "File $remoteName unchanged (checksum: ${localChecksum.take(8)}...)")
+            }
+
+            checksumsDifferent
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check if upload needed", e)
+            true // Assume upload needed on error
+        }
+    }
 }
 

@@ -233,13 +233,14 @@ class FileViewerViewModel(
                 ),
                 color = _drawingState.value.color.toArgb().toUInt().toLong(),
                 strokeWidth = _drawingState.value.strokeWidth,
+                opacity = _drawingState.value.opacity,
                 tool = DrawingTool.TEXT,
                 text = text,
                 createdAt = System.currentTimeMillis()
             )
             addStroke(stroke)
         }
-        
+
         // Close the text dialog
         _drawingState.value = _drawingState.value.copy(
             showTextDialog = false,
@@ -349,26 +350,42 @@ class FileViewerViewModel(
     fun updateStroke(oldStroke: AnnotationStroke, newStroke: AnnotationStroke) {
         viewModelScope.launch {
             try {
-                _uiState.value = _uiState.value.copy(isLoading = true)
-                
+                // Don't set loading state for updates - they should be transparent
+
                 // Find the annotation containing the old stroke
                 val annotation = _annotations.value.find { annotation ->
                     annotation.strokes.any { it.id == oldStroke.id }
                 }
-                
+
                 annotation?.let {
-                    // Remove old stroke and add new one
+                    // Update database in background
                     annotationRepository.removeStrokeFromAnnotation(it.id, oldStroke)
                     annotationRepository.addStrokeToAnnotation(it.id, newStroke)
-                    loadAnnotations()
+
+                    // OPTIMISTIC UPDATE: Update local state immediately without reloading
+                    _annotations.value = _annotations.value.map { ann ->
+                        if (ann.id == it.id) {
+                            // Replace old stroke with new stroke in this annotation
+                            ann.copy(
+                                strokes = ann.strokes.map { stroke ->
+                                    if (stroke.id == oldStroke.id) newStroke else stroke
+                                }
+                            )
+                        } else {
+                            ann
+                        }
+                    }
+
+                    // DON'T update selectedStroke here - let UI manage its own state
+                    // The toolbar will update drawingState.selectedStroke directly
                 }
-                
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = "Failed to update stroke: ${e.message}"
                 )
-            } finally {
-                _uiState.value = _uiState.value.copy(isLoading = false)
+                // On error, reload from database to get correct state
+                loadAnnotations()
             }
         }
     }

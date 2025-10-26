@@ -122,25 +122,15 @@ private fun ToolbarContent(
         Color.Black
     )
 
-    // Track the stroke value when selection changes - used for persistence
-    val selectionSnapshotStroke = remember(drawingState.selectedStroke?.id) {
-        drawingState.selectedStroke
-    }
-
-    // Persist changes when deselecting or switching selection
-    LaunchedEffect(drawingState.selectedStroke?.id) {
-        // Get the previous snapshot from last selection change
-        val previousSnapshot = selectionSnapshotStroke
-
-        // If we're switching away from a stroke (deselecting or selecting different one)
-        if (previousSnapshot != null && previousSnapshot.id != drawingState.selectedStroke?.id) {
-            // Find the database version
-            val dbStroke = annotations.flatMap { it.strokes }.find { it.id == previousSnapshot.id }
-
-            // Only persist if UI version differs from database version
-            if (dbStroke != null && dbStroke != previousSnapshot && onStrokeUpdated != null) {
-                onStrokeUpdated.invoke(dbStroke, previousSnapshot)
-            }
+    // Helper function to update stroke property immediately
+    fun updateStrokeProperty(updatedStroke: com.troubashare.domain.model.AnnotationStroke) {
+        val oldStroke = drawingState.selectedStroke
+        if (oldStroke != null && onStrokeUpdated != null) {
+            println("DEBUG AnnotationToolbar: Updating stroke property - color=${updatedStroke.color}, width=${updatedStroke.strokeWidth}")
+            // Update UI state immediately
+            onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+            // Update memory (triggers auto-save in ViewModel)
+            onStrokeUpdated.invoke(oldStroke, updatedStroke)
         }
     }
 
@@ -307,11 +297,11 @@ private fun ToolbarContent(
                                             shape = CircleShape
                                         )
                                         .clickable {
-                                            // Update UI immediately (NO persistence during edit)
+                                            // Update immediately and persist to memory
                                             val updatedStroke = drawingState.selectedStroke.copy(
                                                 color = color.toArgb().toUInt().toLong()
                                             )
-                                            onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                                            updateStrokeProperty(updatedStroke)
                                         }
                                 ) {
                                     if (isCurrentColor) {
@@ -340,11 +330,10 @@ private fun ToolbarContent(
                     Slider(
                         value = drawingState.selectedStroke.strokeWidth,
                         onValueChange = { newWidth ->
-                            // Update UI immediately (optimistic)
+                            // Update immediately and persist to memory
                             val updatedStroke = drawingState.selectedStroke.copy(strokeWidth = newWidth)
-                            onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                            updateStrokeProperty(updatedStroke)
                         },
-                        // No onValueChangeFinished - persistence handled by selection change
                         valueRange = 1f..20f,
                         steps = 18,
                         modifier = Modifier.fillMaxWidth()
@@ -383,11 +372,10 @@ private fun ToolbarContent(
                             } else {
                                 newOpacity
                             }
-                            // Update UI immediately (optimistic)
+                            // Update immediately and persist to memory
                             val updatedStroke = drawingState.selectedStroke.copy(opacity = snappedOpacity)
-                            onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                            updateStrokeProperty(updatedStroke)
                         },
-                        // No onValueChangeFinished - persistence handled by selection change
                         valueRange = 0.1f..1f,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -686,11 +674,11 @@ private fun ToolbarContent(
                                                 shape = CircleShape
                                             )
                                             .clickable {
-                                                // Update UI immediately (NO persistence during edit)
+                                                // Update immediately and persist to memory
                                                 val updatedStroke = drawingState.selectedStroke.copy(
                                                     color = color.toArgb().toUInt().toLong()
                                                 )
-                                                onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                                                updateStrokeProperty(updatedStroke)
                                             }
                                     ) {
                                         if (isCurrentColor) {
@@ -719,11 +707,10 @@ private fun ToolbarContent(
                             Slider(
                                 value = drawingState.selectedStroke.strokeWidth,
                                 onValueChange = { newWidth ->
-                                    // Update UI immediately (optimistic)
+                                    // Update immediately and persist to memory
                                     val updatedStroke = drawingState.selectedStroke.copy(strokeWidth = newWidth)
-                                    onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                                    updateStrokeProperty(updatedStroke)
                                 },
-                                // No onValueChangeFinished - persistence handled by selection change
                                 valueRange = 1f..20f,
                                 steps = 18
                             )
@@ -762,11 +749,10 @@ private fun ToolbarContent(
                                     } else {
                                         newOpacity
                                     }
-                                    // Update UI immediately (optimistic)
+                                    // Update immediately and persist to memory
                                     val updatedStroke = drawingState.selectedStroke.copy(opacity = snappedOpacity)
-                                    onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                                    updateStrokeProperty(updatedStroke)
                                 },
-                                // No onValueChangeFinished - persistence handled by selection change
                                 valueRange = 0.1f..1f
                             )
                         }

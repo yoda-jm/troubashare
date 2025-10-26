@@ -12,7 +12,10 @@ interface AnnotationDao {
     // Annotation CRUD
     @Query("SELECT * FROM annotations WHERE fileId = :fileId AND memberId = :memberId")
     fun getAnnotationsByFileAndMember(fileId: String, memberId: String): Flow<List<AnnotationEntity>>
-    
+
+    @Query("SELECT * FROM annotations WHERE fileId = :fileId AND memberId = :memberId")
+    suspend fun getAnnotationsByFileAndMemberOnce(fileId: String, memberId: String): List<AnnotationEntity>
+
     @Query("SELECT * FROM annotations WHERE fileId = :fileId AND memberId = :memberId AND pageNumber = :pageNumber")
     suspend fun getAnnotationsByFileAndMemberAndPage(fileId: String, memberId: String, pageNumber: Int): List<AnnotationEntity>
     

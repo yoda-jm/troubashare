@@ -111,17 +111,21 @@ class FileViewerViewModel(
     
     private val _annotations = MutableStateFlow<List<DomainAnnotation>>(emptyList())
     val annotations: StateFlow<List<DomainAnnotation>> = _annotations.asStateFlow()
-    
+
+    // Auto-save job for debounced database sync
+    private var autoSaveJob: kotlinx.coroutines.Job? = null
+
     private val preferencesManager = AnnotationPreferencesManager(context)
     
     // Current page annotations - filtered by preferences
+    // Use Eagerly to ensure immediate updates when _annotations changes
     val currentPageAnnotations = combine(
         _annotations,
         _currentPage
     ) { annotationList, page ->
         val effectiveMemberId = getEffectiveMemberId()
         val effectiveFileId = getEffectiveFileId()
-        
+
         annotationList.filter { annotation ->
             // Filter by page and member
             annotation.pageNumber == page && annotation.memberId == effectiveMemberId &&
@@ -130,7 +134,7 @@ class FileViewerViewModel(
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
     
@@ -187,6 +191,11 @@ class FileViewerViewModel(
     
     fun setCurrentPage(page: Int) {
         _currentPage.value = page
+        // Clear selected stroke when changing pages to prevent showing selection on wrong page
+        if (_drawingState.value.selectedStroke != null) {
+            println("DEBUG: Clearing selected stroke when changing to page $page")
+            _drawingState.value = _drawingState.value.copy(selectedStroke = null)
+        }
     }
     
     fun toggleDrawingMode() {
@@ -253,32 +262,41 @@ class FileViewerViewModel(
             try {
                 println("DEBUG: Adding stroke with ${stroke.points.size} points, tool: ${stroke.tool}")
                 _uiState.value = _uiState.value.copy(isLoading = true)
-                
+
                 // Find or create annotation for current page
                 val currentPageValue = _currentPage.value
                 val effectiveMemberId = getEffectiveMemberId()
-                var annotation = _annotations.value.find { 
-                    it.pageNumber == currentPageValue && it.memberId == effectiveMemberId 
+                var annotation = _annotations.value.find {
+                    it.pageNumber == currentPageValue && it.memberId == effectiveMemberId
                 }
-                
+
                 if (annotation == null) {
-                    println("DEBUG: Creating new annotation for page $currentPageValue")
+                    println("DEBUG: Creating new annotation in database for page $currentPageValue")
                     annotation = annotationRepository.createAnnotation(
                         fileId = getEffectiveFileId(),
                         memberId = getEffectiveMemberId(),
                         pageNumber = currentPageValue
                     )
                     println("DEBUG: Created annotation with ID: ${annotation.id}")
+
+                    // Add to memory immediately
+                    _annotations.value = _annotations.value + annotation
                 }
-                
-                // Add stroke to annotation
-                println("DEBUG: Adding stroke ${stroke.id} to annotation ${annotation.id}")
-                annotationRepository.addStrokeToAnnotation(annotation.id, stroke)
-                
-                // Reload annotations to get updated state
-                loadAnnotations()
-                println("DEBUG: Stroke added successfully")
-                
+
+                // Update memory immediately with new stroke
+                _annotations.value = _annotations.value.map { ann ->
+                    if (ann.id == annotation.id) {
+                        ann.copy(strokes = ann.strokes + stroke)
+                    } else {
+                        ann
+                    }
+                }
+
+                println("DEBUG: Stroke added to memory successfully")
+
+                // Schedule save to database
+                markAnnotationsAsDirty()
+
             } catch (e: Exception) {
                 println("DEBUG: Error adding stroke: ${e.message}")
                 e.printStackTrace()
@@ -295,19 +313,20 @@ class FileViewerViewModel(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true)
-                
+
                 val currentPageValue = _currentPage.value
                 val effectiveMemberId = getEffectiveMemberId()
-                val pageAnnotations = _annotations.value.filter { 
-                    it.pageNumber == currentPageValue && it.memberId == effectiveMemberId 
+
+                // Remove from memory immediately
+                _annotations.value = _annotations.value.filter {
+                    !(it.pageNumber == currentPageValue && it.memberId == effectiveMemberId)
                 }
-                
-                pageAnnotations.forEach { annotationItem ->
-                    annotationRepository.deleteAnnotation(annotationItem)
-                }
-                
-                loadAnnotations()
-                
+
+                println("DEBUG: Cleared annotations from memory for page $currentPageValue")
+
+                // Schedule save to database
+                markAnnotationsAsDirty()
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = "Failed to clear annotations: ${e.message}"
@@ -326,17 +345,21 @@ class FileViewerViewModel(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true)
-                
-                // Find the annotation containing this stroke
-                val annotation = _annotations.value.find { annotation ->
-                    annotation.strokes.any { it.id == stroke.id }
+
+                // Remove from memory immediately
+                _annotations.value = _annotations.value.map { annotation ->
+                    if (annotation.strokes.any { it.id == stroke.id }) {
+                        annotation.copy(strokes = annotation.strokes.filter { it.id != stroke.id })
+                    } else {
+                        annotation
+                    }
                 }
-                
-                annotation?.let {
-                    annotationRepository.removeStrokeFromAnnotation(it.id, stroke)
-                    loadAnnotations()
-                }
-                
+
+                println("DEBUG: Deleted stroke ${stroke.id} from memory")
+
+                // Schedule save to database
+                markAnnotationsAsDirty()
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = "Failed to delete stroke: ${e.message}"
@@ -348,46 +371,35 @@ class FileViewerViewModel(
     }
     
     fun updateStroke(oldStroke: AnnotationStroke, newStroke: AnnotationStroke) {
-        viewModelScope.launch {
-            try {
-                // Don't set loading state for updates - they should be transparent
+        println("DEBUG: updateStroke called - oldColor=${oldStroke.color}, newColor=${newStroke.color}, oldWidth=${oldStroke.strokeWidth}, newWidth=${newStroke.strokeWidth}")
 
-                // Find the annotation containing the old stroke
-                val annotation = _annotations.value.find { annotation ->
-                    annotation.strokes.any { it.id == oldStroke.id }
-                }
-
-                annotation?.let {
-                    // Update database in background
-                    annotationRepository.removeStrokeFromAnnotation(it.id, oldStroke)
-                    annotationRepository.addStrokeToAnnotation(it.id, newStroke)
-
-                    // OPTIMISTIC UPDATE: Update local state immediately without reloading
-                    _annotations.value = _annotations.value.map { ann ->
-                        if (ann.id == it.id) {
-                            // Replace old stroke with new stroke in this annotation
-                            ann.copy(
-                                strokes = ann.strokes.map { stroke ->
-                                    if (stroke.id == oldStroke.id) newStroke else stroke
-                                }
-                            )
-                        } else {
-                            ann
-                        }
-                    }
-
-                    // DON'T update selectedStroke here - let UI manage its own state
-                    // The toolbar will update drawingState.selectedStroke directly
-                }
-
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = "Failed to update stroke: ${e.message}"
-                )
-                // On error, reload from database to get correct state
-                loadAnnotations()
-            }
+        // Find the annotation containing the old stroke
+        val annotation = _annotations.value.find { annotation ->
+            annotation.strokes.any { it.id == oldStroke.id }
         }
+
+        annotation?.let {
+            println("DEBUG: Found annotation ${it.id}, updating memory immediately")
+
+            // Update memory IMMEDIATELY - this is the source of truth
+            _annotations.value = _annotations.value.map { ann ->
+                if (ann.id == it.id) {
+                    ann.copy(
+                        strokes = ann.strokes.map { stroke ->
+                            if (stroke.id == oldStroke.id) newStroke else stroke
+                        }
+                    )
+                } else {
+                    ann
+                }
+            }
+
+            val updatedStroke = _annotations.value.flatMap { it.strokes }.find { it.id == newStroke.id }
+            println("DEBUG: Memory updated - stroke now has color=${updatedStroke?.color}, width=${updatedStroke?.strokeWidth}")
+
+            // Schedule auto-save to database
+            markAnnotationsAsDirty()
+        } ?: println("DEBUG: Annotation NOT found for stroke ${oldStroke.id}")
     }
     
     fun showAnnotationsList() {
@@ -624,19 +636,24 @@ class FileViewerViewModel(
             try {
                 val currentEffectiveFileId = getEffectiveFileId()
                 val currentEffectiveMemberId = getEffectiveMemberId()
-                println("DEBUG: Loading annotations for original fileId: '$fileId', effective fileId: '$currentEffectiveFileId', original memberId: '$memberId', effective memberId: '$currentEffectiveMemberId'")
-                annotationRepository.getAnnotationsByFileAndMember(currentEffectiveFileId, currentEffectiveMemberId)
-                    .collect { annotationList ->
-                        println("DEBUG: Loaded ${annotationList.size} annotations from database")
-                        annotationList.forEachIndexed { index, annotation ->
-                            println("DEBUG: Annotation $index - ID: ${annotation.id}, Strokes: ${annotation.strokes.size}")
-                        }
-                        _annotations.value = annotationList
-                        
-                        // Log visibility preferences for debugging
-                        val visibility = preferencesManager.getAnnotationLayerVisibility(currentEffectiveFileId, currentEffectiveMemberId)
-                        println("DEBUG: Annotation layer visibility for fileId='$currentEffectiveFileId', memberId='$currentEffectiveMemberId': $visibility")
+                println("DEBUG: Loading annotations ONCE for fileId: '$currentEffectiveFileId', memberId: '$currentEffectiveMemberId'")
+
+                // Load once - no continuous Flow collection
+                val annotationList = annotationRepository.getAnnotationsByFileAndMemberOnce(currentEffectiveFileId, currentEffectiveMemberId)
+
+                println("DEBUG: Loaded ${annotationList.size} annotations into memory")
+                annotationList.forEachIndexed { index, annotation ->
+                    println("DEBUG: Annotation $index - ID: ${annotation.id}, Strokes: ${annotation.strokes.size}")
+                    annotation.strokes.forEach { stroke ->
+                        println("DEBUG:   Stroke ${stroke.id} - color=${stroke.color}, width=${stroke.strokeWidth}")
                     }
+                }
+
+                // Set memory state - this is now the source of truth
+                _annotations.value = annotationList
+
+                val visibility = preferencesManager.getAnnotationLayerVisibility(currentEffectiveFileId, currentEffectiveMemberId)
+                println("DEBUG: Annotation layer visibility: $visibility")
             } catch (e: Exception) {
                 println("DEBUG: Error loading annotations: ${e.message}")
                 e.printStackTrace()
@@ -645,6 +662,40 @@ class FileViewerViewModel(
                 )
             }
         }
+    }
+
+    // Save all annotations to database
+    private fun saveAnnotationsToDatabase() {
+        viewModelScope.launch {
+            try {
+                println("DEBUG: Saving ${_annotations.value.size} annotations to database...")
+                _annotations.value.forEach { annotation ->
+                    annotationRepository.saveAnnotationWithStrokes(annotation)
+                }
+                println("DEBUG: Successfully saved all annotations to database")
+            } catch (e: Exception) {
+                println("DEBUG: Error saving annotations to database: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // Mark annotations as dirty and schedule auto-save
+    private fun markAnnotationsAsDirty() {
+        println("DEBUG: Marking annotations as dirty, scheduling auto-save in 5 seconds")
+        autoSaveJob?.cancel()
+        autoSaveJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(5000) // 5 seconds debounce
+            println("DEBUG: Auto-save timer expired, saving to database...")
+            saveAnnotationsToDatabase()
+        }
+    }
+
+    // Force immediate save (called when exiting)
+    fun saveAnnotationsNow() {
+        println("DEBUG: Force saving annotations immediately")
+        autoSaveJob?.cancel()
+        saveAnnotationsToDatabase()
     }
 }
 

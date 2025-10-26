@@ -58,7 +58,15 @@ fun FileViewerScreen(
     
     val uiState by viewModel.uiState.collectAsState()
     val drawingState by viewModel.drawingState.collectAsState()
-    
+
+    // Save annotations when leaving the screen
+    DisposableEffect(Unit) {
+        onDispose {
+            println("DEBUG FileViewerScreen: Screen disposing, saving annotations immediately")
+            viewModel.saveAnnotationsNow()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

@@ -3,6 +3,9 @@ package com.troubashare.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -10,12 +13,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.gestures.detectTapGestures
 import com.troubashare.domain.model.*
 import java.util.*
 
@@ -29,6 +33,7 @@ fun AnnotationCanvas(
     onZoomGesture: ((zoom: Float, pan: Offset) -> Unit)? = null,
     onDoubleTap: ((tapOffset: Offset, size: androidx.compose.ui.geometry.Size) -> Unit)? = null,
     onStrokeUpdated: ((old: AnnotationStroke, new: AnnotationStroke) -> Unit)? = null,
+    onStrokeDeleted: ((AnnotationStroke) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var currentPoints by remember { mutableStateOf<List<AnnotationPoint>>(emptyList()) }
@@ -61,7 +66,8 @@ fun AnnotationCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(drawingState.tool, drawingState.isDrawing, drawingState.color, drawingState.strokeWidth) {
+            // Single pointer input: Handle all tool-specific gestures
+            .pointerInput(drawingState.tool, drawingState.isDrawing, drawingState.color, drawingState.strokeWidth, drawingState.opacity, drawingState.selectedStroke?.id) {
                 when (drawingState.tool) {
                     DrawingTool.TEXT -> {
                         // Handle text annotation placement
@@ -82,45 +88,52 @@ fun AnnotationCanvas(
                     }
                     
                     DrawingTool.PEN, DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
-                        // Handle drawing gestures
-                        detectDragGestures(
-                            onDragStart = { offset ->
+                        // Handle drawing gestures - use awaitPointerEventScope to capture initial touch
+                        awaitPointerEventScope {
+                            while (true) {
+                                // Wait for first down event - this captures the EXACT touch point
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val downPosition = down.position
+
                                 // CONVERT to PDF-relative coordinates (0.0 to 1.0 range)
-                                val pdfRelativeX = (offset.x - pdfOffsetX) / effectiveWidth   // 0.0 to 1.0 relative to effective PDF area
-                                val pdfRelativeY = (offset.y - pdfOffsetY) / effectiveHeight  // 0.0 to 1.0 relative to effective PDF area
-                                
-                                // Initialize with first point
+                                val pdfRelativeX = (downPosition.x - pdfOffsetX) / effectiveWidth
+                                val pdfRelativeY = (downPosition.y - pdfOffsetY) / effectiveHeight
+
+                                // Initialize with first point at EXACT touch location
                                 currentPoints = listOf(
                                     AnnotationPoint(
-                                        x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
+                                        x = pdfRelativeX,
                                         y = pdfRelativeY,
                                         pressure = 1f,
                                         timestamp = System.currentTimeMillis()
                                     )
                                 )
-                            },
-                            onDrag = { change, _ ->
-                                change.consume() // Consume touch events to prevent conflicts
-                                
-                                // CONVERT drag coordinates to PDF-relative
-                                val pdfRelativeX = (change.position.x - pdfOffsetX) / effectiveWidth
-                                val pdfRelativeY = (change.position.y - pdfOffsetY) / effectiveHeight
-                                
-                                // Add point to PDF-relative coordinates list for real-time drawing
-                                currentPoints = currentPoints + AnnotationPoint(
-                                    x = pdfRelativeX,  // Save PDF-relative coordinates (0.0-1.0)
-                                    y = pdfRelativeY,
-                                    pressure = 1f,
-                                    timestamp = System.currentTimeMillis()
-                                )
-                            },
-                            onDragEnd = {
+
+                                // Now track drag movements
+                                drag(down.id) { change ->
+                                    change.consume() // Consume touch events to prevent conflicts
+
+                                    // CONVERT drag coordinates to PDF-relative
+                                    val dragPdfRelativeX = (change.position.x - pdfOffsetX) / effectiveWidth
+                                    val dragPdfRelativeY = (change.position.y - pdfOffsetY) / effectiveHeight
+
+                                    // Add point to PDF-relative coordinates list for real-time drawing
+                                    currentPoints = currentPoints + AnnotationPoint(
+                                        x = dragPdfRelativeX,
+                                        y = dragPdfRelativeY,
+                                        pressure = 1f,
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                }
+
+                                // Drag ended - save the stroke
                                 if (currentPoints.isNotEmpty()) {
                                     val stroke = AnnotationStroke(
                                         id = UUID.randomUUID().toString(),
                                         points = currentPoints,
                                         color = drawingState.color.toArgb().toUInt().toLong(),
                                         strokeWidth = drawingState.strokeWidth,
+                                        opacity = drawingState.opacity,
                                         tool = drawingState.tool,
                                         createdAt = System.currentTimeMillis()
                                     )
@@ -131,89 +144,118 @@ fun AnnotationCanvas(
                                 }
                                 currentPoints = emptyList()
                             }
-                        )
+                        }
                     }
                     
                     DrawingTool.SELECT -> {
-                        // Handle tap-to-select and drag-to-move
-                        detectTapGestures(
-                            onTap = { tapOffset ->
-                                // Tap to select a stroke
+                        // Use awaitPointerEventScope for fine-grained control over tap vs drag
+                        awaitPointerEventScope {
+                            while (true) {
+                                // Wait for first down event
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val downPosition = down.position
+                                val downTime = System.currentTimeMillis()
+
+                                // Find which stroke was tapped
                                 val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-                                val tappedStroke = findStrokeAtPoint(allStrokes, tapOffset, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
+                                val tappedStroke = findStrokeAtPoint(allStrokes, downPosition, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
 
-                                onDrawingStateChanged(
-                                    drawingState.copy(
-                                        selectedStroke = if (drawingState.selectedStroke?.id == tappedStroke?.id) {
-                                            null // Deselect if tapping same stroke
-                                        } else {
-                                            tappedStroke // Select the tapped stroke
-                                        }
-                                    )
-                                )
-                            }
-                        )
-
-                        // Drag gesture for moving selected stroke
-                        if (drawingState.selectedStroke != null && onStrokeUpdated != null) {
-                            detectDragGestures(
-                                onDragStart = { startOffset ->
-                                    // Verify the selected stroke is at this position
-                                    val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-                                    val strokeAtPoint = findStrokeAtPoint(allStrokes, startOffset, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
-
-                                    if (strokeAtPoint?.id == drawingState.selectedStroke.id) {
-                                        // Store starting position for drag calculation
-                                        currentPoints = listOf(
-                                            AnnotationPoint(
-                                                x = startOffset.x,
-                                                y = startOffset.y,
-                                                pressure = 1f,
-                                                timestamp = System.currentTimeMillis()
-                                            )
+                                // Check if we should prepare for drag-to-move
+                                var canDragSelectedStroke = false
+                                if (tappedStroke?.id == drawingState.selectedStroke?.id && drawingState.selectedStroke != null && onStrokeUpdated != null) {
+                                    // Check if inside bounding box
+                                    val selectedStroke = drawingState.selectedStroke
+                                    val canvasPoints = selectedStroke.points.map { point ->
+                                        AnnotationPoint(
+                                            x = point.x * effectiveWidth + pdfOffsetX,
+                                            y = point.y * effectiveHeight + pdfOffsetY,
+                                            pressure = point.pressure,
+                                            timestamp = point.timestamp
                                         )
                                     }
-                                },
-                                onDrag = { change, _ ->
-                                    if (currentPoints.isNotEmpty()) {
-                                        change.consume()
-                                        val startOffset = Offset(currentPoints.first().x, currentPoints.first().y)
-                                        val translation = change.position - startOffset
+                                    val bounds = calculateStrokeBounds(canvasPoints)
+                                    canDragSelectedStroke = downPosition.x >= bounds.left &&
+                                                           downPosition.x <= bounds.right &&
+                                                           downPosition.y >= bounds.top &&
+                                                           downPosition.y <= bounds.bottom
 
-                                        // Calculate PDF-relative translation
-                                        val pdfTranslationX = translation.x / effectiveWidth
-                                        val pdfTranslationY = translation.y / effectiveHeight
+                                    if (canDragSelectedStroke) {
+                                        currentPoints = listOf(AnnotationPoint(downPosition.x, downPosition.y, 1f, downTime))
+                                    }
+                                }
 
-                                        // Update the selected stroke position
-                                        val updatedStroke = drawingState.selectedStroke.copy(
-                                            points = drawingState.selectedStroke.points.map { point ->
-                                                point.copy(
-                                                    x = point.x + pdfTranslationX,
-                                                    y = point.y + pdfTranslationY
-                                                )
+                                // Track drag
+                                var totalDrag = 0f
+                                var hasDragged = false
+                                val tapThreshold = 10f
+                                // Start with the current UI version (which has latest slider/color edits)
+                                // We'll use this as both the starting point and to track changes
+                                var currentStroke = drawingState.selectedStroke
+                                // For persistence, we need the database version (original position + old edits)
+                                val dbStrokeAtDragStart = allStrokes.find { it.id == drawingState.selectedStroke?.id }
+
+                                println("DEBUG AnnotationCanvas: Drag starting - currentStroke color=${currentStroke?.color}, dbStroke color=${dbStrokeAtDragStart?.color}")
+
+                                // Wait for drag or release
+                                val result = drag(down.id) { change ->
+                                    val dragAmount = change.position - change.previousPosition
+                                    totalDrag += kotlin.math.sqrt(dragAmount.x * dragAmount.x + dragAmount.y * dragAmount.y)
+
+                                    if (totalDrag > tapThreshold) {
+                                        hasDragged = true
+
+                                        if (canDragSelectedStroke && currentStroke != null) {
+                                            // Drag the selected stroke - use currentStroke, not drawingState.selectedStroke
+                                            change.consume()
+
+                                            val pdfTranslationX = dragAmount.x / effectiveWidth
+                                            val pdfTranslationY = dragAmount.y / effectiveHeight
+
+                                            val oldStroke = currentStroke!!  // Force unwrap since we checked != null
+                                            val updatedStroke = oldStroke.copy(
+                                                points = oldStroke.points.map { point ->
+                                                    point.copy(
+                                                        x = point.x + pdfTranslationX,
+                                                        y = point.y + pdfTranslationY
+                                                    )
+                                                }
+                                            )
+
+                                            // Update state for live feedback (no persistence yet)
+                                            onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                                            currentStroke = updatedStroke // Update our local reference
+                                        } else if (tappedStroke == null && onZoomGesture != null) {
+                                            // Pan empty space
+                                            change.consume()
+                                            onZoomGesture.invoke(1f, dragAmount)
+                                        }
+                                    }
+                                }
+
+                                // After drag ends, persist the final position AND any color/width/opacity edits
+                                if (hasDragged && canDragSelectedStroke && currentStroke != null && dbStrokeAtDragStart != null && onStrokeUpdated != null) {
+                                    // Use database version as "old" and final UI version as "new"
+                                    // This preserves all edits (color/width/opacity from before drag + position from drag)
+                                    onStrokeUpdated.invoke(dbStrokeAtDragStart, currentStroke!!)
+                                    // Keep the updated stroke selected so we can drag again without reselecting
+                                    // (the onDrawingStateChanged was already called during drag with the final position)
+                                }
+
+                                currentPoints = emptyList()
+
+                                // If didn't drag much, treat as tap
+                                if (!hasDragged && totalDrag <= tapThreshold) {
+                                    onDrawingStateChanged(
+                                        drawingState.copy(
+                                            selectedStroke = if (drawingState.selectedStroke?.id == tappedStroke?.id) {
+                                                null // Deselect if tapping same stroke
+                                            } else {
+                                                tappedStroke // Select the tapped stroke (can be null to deselect)
                                             }
                                         )
-
-                                        onStrokeUpdated.invoke(drawingState.selectedStroke, updatedStroke)
-
-                                        // Update drawing state with moved stroke
-                                        onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
-
-                                        // Update start position for next drag calculation
-                                        currentPoints = listOf(
-                                            AnnotationPoint(
-                                                x = change.position.x,
-                                                y = change.position.y,
-                                                pressure = 1f,
-                                                timestamp = System.currentTimeMillis()
-                                            )
-                                        )
-                                    }
-                                },
-                                onDragEnd = {
-                                    currentPoints = emptyList()
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                     
@@ -278,10 +320,15 @@ fun AnnotationCanvas(
         
         // Draw existing annotation strokes (background handled by parent)
         val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-        
+        val selectedStroke = drawingState.selectedStroke
+
+        // First pass: draw all strokes
+        // Important: If a stroke is selected, draw it from drawingState (for live updates during drag)
+        // rather than from the annotations list (which updates async from database)
         allStrokes.forEach { stroke ->
-            val isSelected = drawingState.selectedStroke?.id == stroke.id
-            if (stroke.points.isNotEmpty()) {
+            val isSelected = selectedStroke?.id == stroke.id
+            // Skip drawing the selected stroke here - we'll draw it separately from drawingState for live updates
+            if (!isSelected && stroke.points.isNotEmpty()) {
                 // CONVERT from PDF-relative coordinates (0.0-1.0) to effective PDF display area pixels
                 val canvasPoints = stroke.points.map { point ->
                     point.copy(
@@ -298,25 +345,10 @@ fun AnnotationCanvas(
                 
                 when (stroke.tool) {
                     DrawingTool.PEN -> {
-                        // Draw bounding box for selected stroke
-                        if (isSelected) {
-                            val bounds = calculateStrokeBounds(canvasPoints)
-                            drawRect(
-                                color = Color.Blue,
-                                topLeft = bounds.topLeft,
-                                size = bounds.size,
-                                style = Stroke(
-                                    width = 2f,
-                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                                )
-                            )
-                            // Draw corner handles
-                            drawCornerHandles(bounds.topLeft, bounds.size)
-                        }
-
+                        // Draw the stroke path (bounding box will be drawn later on top)
                         drawPath(
                             path = path,
-                            color = strokeColor,
+                            color = strokeColor.copy(alpha = stroke.opacity),
                             style = Stroke(
                                 width = stroke.strokeWidth,
                                 cap = StrokeCap.Round,
@@ -325,25 +357,13 @@ fun AnnotationCanvas(
                         )
                     }
                     DrawingTool.HIGHLIGHTER -> {
-                        // Draw bounding box for selected stroke
-                        if (isSelected) {
-                            val bounds = calculateStrokeBounds(canvasPoints)
-                            drawRect(
-                                color = Color.Blue,
-                                topLeft = bounds.topLeft,
-                                size = bounds.size,
-                                style = Stroke(
-                                    width = 2f,
-                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                                )
-                            )
-                            // Draw corner handles
-                            drawCornerHandles(bounds.topLeft, bounds.size)
-                        }
+                        // Legacy tool - use opacity from stroke or default to 0.45f
+                        val opacity = if (stroke.opacity > 0f) stroke.opacity else 0.45f
 
+                        // Draw the stroke path (bounding box will be drawn later on top)
                         drawPath(
                             path = path,
-                            color = strokeColor.copy(alpha = 0.5f),
+                            color = strokeColor.copy(alpha = opacity),
                             style = Stroke(
                                 width = stroke.strokeWidth * 1.3f,
                                 cap = StrokeCap.Round,
@@ -352,23 +372,8 @@ fun AnnotationCanvas(
                         )
                     }
                     DrawingTool.ERASER -> {
-                        // Draw bounding box for selected stroke
-                        if (isSelected) {
-                            val bounds = calculateStrokeBounds(canvasPoints)
-                            drawRect(
-                                color = Color.Red,  // Red for eraser strokes
-                                topLeft = bounds.topLeft,
-                                size = bounds.size,
-                                style = Stroke(
-                                    width = 2f,
-                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                                )
-                            )
-                            // Draw corner handles
-                            drawCornerHandles(bounds.topLeft, bounds.size)
-                        }
-
-                        // For eraser, use the background color or white with alpha blending
+                        // Legacy tool - keep white color with full opacity
+                        // Draw the stroke path (bounding box will be drawn later on top)
                         drawPath(
                             path = path,
                             color = Color.White.copy(alpha = 1f),
@@ -384,47 +389,12 @@ fun AnnotationCanvas(
                         // Selection will be handled separately
                     }
                     DrawingTool.TEXT -> {
-                        // Draw text annotation
+                        // Draw text annotation (bounding box will be drawn later on top)
                         stroke.text?.let { text ->
                             if (canvasPoints.isNotEmpty()) {
-                                val position = canvasPoints.first()  // Use canvas-converted coordinates
-                                // Use black color for maximum visibility in drawing mode too
+                                val position = canvasPoints.first()
                                 val textColor = Color.Black
-
-                                // Ensure minimum readable size
                                 val fontSize = maxOf(stroke.strokeWidth * 3, 18f).sp
-
-                                // Draw bounding box for selected text
-                                if (isSelected) {
-                                    val textWidth = text.length * fontSize.value * 0.6f // Approximate text width
-                                    val textHeight = fontSize.value * 1.2f
-
-                                    val bounds = androidx.compose.ui.geometry.Rect(
-                                        offset = Offset(position.x - 8f, position.y - 8f),
-                                        size = androidx.compose.ui.geometry.Size(textWidth + 16f, textHeight + 16f)
-                                    )
-
-                                    // Draw bounding box with dashed border
-                                    drawRect(
-                                        color = Color.Blue,
-                                        topLeft = bounds.topLeft,
-                                        size = bounds.size,
-                                        style = Stroke(
-                                            width = 2f,
-                                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                                        )
-                                    )
-
-                                    // Draw corner handles
-                                    drawCornerHandles(bounds.topLeft, bounds.size)
-
-                                    // Draw semi-transparent background
-                                    drawRect(
-                                        color = Color.Blue.copy(alpha = 0.1f),
-                                        topLeft = bounds.topLeft,
-                                        size = bounds.size
-                                    )
-                                }
 
                                 drawText(
                                     textMeasurer = textMeasurer,
@@ -444,7 +414,149 @@ fun AnnotationCanvas(
                 }
             }
         }
-        
+
+        // Draw the selected stroke separately from drawingState (for live updates during drag/edit)
+        if (selectedStroke != null && selectedStroke.points.isNotEmpty()) {
+            // CONVERT from PDF-relative coordinates (0.0-1.0) to effective PDF display area pixels
+            val canvasPoints = selectedStroke.points.map { point ->
+                point.copy(
+                    x = point.x * effectiveWidth + pdfOffsetX,   // PDF-relative to effective area pixels
+                    y = point.y * effectiveHeight + pdfOffsetY   // PDF-relative to effective area pixels
+                )
+            }
+            val path = createPathFromPoints(canvasPoints)
+            val strokeColor = try {
+                Color(selectedStroke.color.toUInt().toInt())
+            } catch (e: Exception) {
+                Color.Black // Fallback to black
+            }
+
+            when (selectedStroke.tool) {
+                DrawingTool.PEN -> {
+                    drawPath(
+                        path = path,
+                        color = strokeColor.copy(alpha = selectedStroke.opacity),
+                        style = Stroke(
+                            width = selectedStroke.strokeWidth,
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+                }
+                DrawingTool.HIGHLIGHTER -> {
+                    val opacity = if (selectedStroke.opacity > 0f) selectedStroke.opacity else 0.45f
+                    drawPath(
+                        path = path,
+                        color = strokeColor.copy(alpha = opacity),
+                        style = Stroke(
+                            width = selectedStroke.strokeWidth * 1.3f,
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+                }
+                DrawingTool.ERASER -> {
+                    drawPath(
+                        path = path,
+                        color = Color.White.copy(alpha = 1f),
+                        style = Stroke(
+                            width = selectedStroke.strokeWidth * 3f,
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+                }
+                DrawingTool.TEXT -> {
+                    selectedStroke.text?.let { text ->
+                        if (canvasPoints.isNotEmpty()) {
+                            val position = canvasPoints.first()
+                            val textColor = Color.Black
+                            val fontSize = maxOf(selectedStroke.strokeWidth * 3, 18f).sp
+
+                            drawText(
+                                textMeasurer = textMeasurer,
+                                text = text,
+                                topLeft = Offset(position.x, position.y),
+                                style = TextStyle(
+                                    color = textColor,
+                                    fontSize = fontSize
+                                )
+                            )
+                        }
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        // Second pass: draw bounding box and handles on top of all strokes for selected stroke
+        if (selectedStroke != null) {
+            // Use selectedStroke from drawingState directly (not from allStrokes)
+            if (selectedStroke.points.isNotEmpty()) {
+                val canvasPoints = selectedStroke.points.map { point ->
+                    point.copy(
+                        x = point.x * effectiveWidth + pdfOffsetX,
+                        y = point.y * effectiveHeight + pdfOffsetY
+                    )
+                }
+
+                when (selectedStroke.tool) {
+                    DrawingTool.PEN, DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
+                        val bounds = calculateStrokeBounds(canvasPoints)
+                        val boxColor = if (selectedStroke.tool == DrawingTool.ERASER) Color.Red else Color.Blue
+
+                        // Draw bounding box with dashed border
+                        drawRect(
+                            color = boxColor,
+                            topLeft = bounds.topLeft,
+                            size = bounds.size,
+                            style = Stroke(
+                                width = 2f,
+                                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                            )
+                        )
+                        // Draw corner handles
+                        drawCornerHandles(bounds.topLeft, bounds.size)
+                    }
+                    DrawingTool.TEXT -> {
+                        selectedStroke.text?.let { text ->
+                            val position = canvasPoints.first()
+                            val fontSize = maxOf(selectedStroke.strokeWidth * 3, 18f).sp
+                            val textWidth = text.length * fontSize.value * 0.6f
+                            val textHeight = fontSize.value * 1.2f
+
+                            val bounds = androidx.compose.ui.geometry.Rect(
+                                offset = Offset(position.x - 8f, position.y - 8f),
+                                size = androidx.compose.ui.geometry.Size(textWidth + 16f, textHeight + 16f)
+                            )
+
+                            // Draw semi-transparent background
+                            drawRect(
+                                color = Color.Blue.copy(alpha = 0.1f),
+                                topLeft = bounds.topLeft,
+                                size = bounds.size
+                            )
+
+                            // Draw bounding box with dashed border
+                            drawRect(
+                                color = Color.Blue,
+                                topLeft = bounds.topLeft,
+                                size = bounds.size,
+                                style = Stroke(
+                                    width = 2f,
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                )
+                            )
+
+                            // Draw corner handles
+                            drawCornerHandles(bounds.topLeft, bounds.size)
+                        }
+                    }
+                    else -> {} // No bounding box for other tools
+                }
+            }
+        }
+
         // Draw current stroke being drawn (real-time preview)
         if (currentPoints.isNotEmpty()) {
             // Convert current PDF-relative points to canvas coordinates for drawing
@@ -456,12 +568,12 @@ fun AnnotationCanvas(
             }
             val path = createPathFromPoints(canvasPoints)
             val strokeColor = drawingState.color
-            
+
             when (drawingState.tool) {
                 DrawingTool.PEN -> {
                     drawPath(
                         path = path,
-                        color = strokeColor,
+                        color = strokeColor.copy(alpha = drawingState.opacity),
                         style = Stroke(
                             width = drawingState.strokeWidth,
                             cap = StrokeCap.Round,
@@ -470,9 +582,10 @@ fun AnnotationCanvas(
                     )
                 }
                 DrawingTool.HIGHLIGHTER -> {
+                    // Legacy tool - use 0.45f opacity for preview
                     drawPath(
                         path = path,
-                        color = strokeColor.copy(alpha = 0.5f),
+                        color = strokeColor.copy(alpha = 0.45f),
                         style = Stroke(
                             width = drawingState.strokeWidth * 1.3f,
                             cap = StrokeCap.Round,
@@ -481,6 +594,7 @@ fun AnnotationCanvas(
                     )
                 }
                 DrawingTool.ERASER -> {
+                    // Legacy tool - keep white with full opacity
                     drawPath(
                         path = path,
                         color = Color.White.copy(alpha = 1f),

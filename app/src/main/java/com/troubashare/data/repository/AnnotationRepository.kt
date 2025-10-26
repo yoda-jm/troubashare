@@ -28,6 +28,14 @@ class AnnotationRepository(
             }
         }
     }
+
+    suspend fun getAnnotationsByFileAndMemberOnce(fileId: String, memberId: String): List<Annotation> {
+        val entities = annotationDao.getAnnotationsByFileAndMemberOnce(fileId, memberId)
+        return entities.map { entity ->
+            val strokes = getStrokesForAnnotation(entity.id)
+            entity.toDomainModel(strokes)
+        }
+    }
     
     suspend fun getAnnotationsByPage(fileId: String, memberId: String, pageNumber: Int): List<Annotation> {
         val entities = annotationDao.getAnnotationsByFileAndMemberAndPage(fileId, memberId, pageNumber)
@@ -68,11 +76,12 @@ class AnnotationRepository(
             annotationId = annotationId,
             color = stroke.color,
             strokeWidth = stroke.strokeWidth,
+            opacity = stroke.opacity,
             tool = stroke.tool.name,
             text = stroke.text,
             createdAt = stroke.createdAt
         )
-        
+
         annotationDao.insertStroke(strokeEntity)
         
         // Insert points for the stroke
@@ -102,9 +111,58 @@ class AnnotationRepository(
             createdAt = annotation.createdAt,
             updatedAt = System.currentTimeMillis()
         )
-        
+
         annotationDao.updateAnnotation(entity)
         return annotation.copy(updatedAt = entity.updatedAt)
+    }
+
+    suspend fun saveAnnotationWithStrokes(annotation: Annotation) {
+        // Update annotation metadata
+        val entity = AnnotationEntity(
+            id = annotation.id,
+            fileId = annotation.fileId,
+            memberId = annotation.memberId,
+            pageNumber = annotation.pageNumber,
+            createdAt = annotation.createdAt,
+            updatedAt = System.currentTimeMillis()
+        )
+        annotationDao.updateAnnotation(entity)
+
+        // Delete all existing strokes and points for this annotation
+        val existingStrokes = annotationDao.getStrokesByAnnotation(annotation.id)
+        existingStrokes.forEach { stroke ->
+            annotationDao.deletePointsByStroke(stroke.id)
+            annotationDao.deleteStroke(stroke)
+        }
+
+        // Insert all current strokes with their points
+        annotation.strokes.forEach { stroke ->
+            val strokeEntity = AnnotationStrokeEntity(
+                id = stroke.id,
+                annotationId = annotation.id,
+                color = stroke.color,
+                strokeWidth = stroke.strokeWidth,
+                opacity = stroke.opacity,
+                tool = stroke.tool.name,
+                text = stroke.text,
+                createdAt = stroke.createdAt
+            )
+            annotationDao.insertStroke(strokeEntity)
+
+            // Insert points
+            val pointEntities = stroke.points.map { point ->
+                AnnotationPointEntity(
+                    strokeId = stroke.id,
+                    x = point.x,
+                    y = point.y,
+                    pressure = point.pressure,
+                    timestamp = point.timestamp
+                )
+            }
+            if (pointEntities.isNotEmpty()) {
+                annotationDao.insertPoints(pointEntities)
+            }
+        }
     }
     
     suspend fun deleteAnnotation(annotation: Annotation) {
@@ -134,13 +192,14 @@ class AnnotationRepository(
     suspend fun removeStrokeFromAnnotation(annotationId: String, stroke: AnnotationStroke) {
         // Delete points for the stroke
         annotationDao.deletePointsByStroke(stroke.id)
-        
+
         // Delete the stroke entity
         val strokeEntity = AnnotationStrokeEntity(
             id = stroke.id,
             annotationId = annotationId,
             color = stroke.color,
             strokeWidth = stroke.strokeWidth,
+            opacity = stroke.opacity,
             tool = stroke.tool.name,
             text = stroke.text,
             createdAt = stroke.createdAt
@@ -166,6 +225,7 @@ class AnnotationRepository(
                 points = points,
                 color = strokeEntity.color,
                 strokeWidth = strokeEntity.strokeWidth,
+                opacity = strokeEntity.opacity,
                 tool = DrawingTool.valueOf(strokeEntity.tool),
                 text = strokeEntity.text,
                 createdAt = strokeEntity.createdAt

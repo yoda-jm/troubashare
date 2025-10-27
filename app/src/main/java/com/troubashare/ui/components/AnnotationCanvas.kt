@@ -87,7 +87,7 @@ fun AnnotationCanvas(
                         }
                     }
                     
-                    DrawingTool.PEN, DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
+                    DrawingTool.PEN -> {
                         // Handle drawing gestures - use awaitPointerEventScope to capture initial touch
                         awaitPointerEventScope {
                             while (true) {
@@ -145,6 +145,12 @@ fun AnnotationCanvas(
                                 currentPoints = emptyList()
                             }
                         }
+                    }
+
+                    // Legacy tools - no drawing handler (can't create new strokes)
+                    DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
+                        // These tools are deprecated - only kept for rendering existing strokes
+                        // No drawing interaction allowed
                     }
                     
                     DrawingTool.SELECT -> {
@@ -581,29 +587,9 @@ fun AnnotationCanvas(
                         )
                     )
                 }
-                DrawingTool.HIGHLIGHTER -> {
-                    // Legacy tool - use 0.45f opacity for preview
-                    drawPath(
-                        path = path,
-                        color = strokeColor.copy(alpha = 0.45f),
-                        style = Stroke(
-                            width = drawingState.strokeWidth * 1.3f,
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
-                    )
-                }
-                DrawingTool.ERASER -> {
-                    // Legacy tool - keep white with full opacity
-                    drawPath(
-                        path = path,
-                        color = Color.White.copy(alpha = 1f),
-                        style = Stroke(
-                            width = drawingState.strokeWidth * 3f, // Make eraser thicker
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
-                    )
+                // Legacy tools don't have drawing preview (deprecated)
+                DrawingTool.HIGHLIGHTER, DrawingTool.ERASER -> {
+                    // No preview for deprecated tools
                 }
                 DrawingTool.SELECT -> {
                     // SELECT tool doesn't draw preview strokes

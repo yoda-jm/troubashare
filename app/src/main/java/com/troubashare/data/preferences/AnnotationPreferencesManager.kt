@@ -59,7 +59,29 @@ class AnnotationPreferencesManager(context: Context) {
         val key = "${fileId}_${memberId}"
         return preferences[key]?.layerName
     }
-    
+
+    fun setScrollMode(fileId: String, memberId: String, useScrollMode: Boolean) {
+        val preferences = getAnnotationLayerPreferences()
+        val key = "${fileId}_${memberId}"
+
+        val existingPref = preferences[key]
+        val updatedPref = existingPref?.copy(useScrollMode = useScrollMode)
+            ?: AnnotationLayerPreferences(
+                fileId = fileId,
+                memberId = memberId,
+                useScrollMode = useScrollMode
+            )
+
+        preferences[key] = updatedPref
+        saveAnnotationLayerPreferences(preferences)
+    }
+
+    fun getScrollMode(fileId: String, memberId: String): Boolean {
+        val preferences = getAnnotationLayerPreferences()
+        val key = "${fileId}_${memberId}"
+        return preferences[key]?.useScrollMode ?: false // Default to page/swipe mode
+    }
+
     private fun getAnnotationLayerPreferences(): MutableMap<String, AnnotationLayerPreferences> {
         val json = prefs.getString("layer_preferences", null) ?: return mutableMapOf()
         return try {

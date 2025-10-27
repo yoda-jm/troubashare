@@ -376,10 +376,15 @@ fun FileItem(
     // State for annotation visibility in concert mode (per file)
     val context = LocalContext.current
     val preferencesManager = remember { com.troubashare.data.preferences.AnnotationPreferencesManager(context) }
-    var showAnnotationsInConcert by remember { 
+    var showAnnotationsInConcert by remember {
         mutableStateOf(preferencesManager.getAnnotationLayerVisibility(file.id, file.memberId))
     }
-    
+
+    // Scroll mode state (for PDFs in concert mode)
+    var useScrollMode by remember {
+        mutableStateOf(preferencesManager.getScrollMode(file.id, file.memberId))
+    }
+
     // Layer name state
     var layerName by remember {
         mutableStateOf(preferencesManager.getAnnotationLayerName(file.id, file.memberId) ?: file.fileName)
@@ -539,22 +544,69 @@ fun FileItem(
             
             // Concert mode annotation toggle (only for files that have annotations)
             if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Concert",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Switch(
-                        checked = showAnnotationsInConcert,
-                        onCheckedChange = { 
-                            showAnnotationsInConcert = it
-                            preferencesManager.setAnnotationLayerVisibility(file.id, file.memberId, it)
-                        },
-                        modifier = Modifier.scale(0.7f)
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Concert",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Switch(
+                            checked = showAnnotationsInConcert,
+                            onCheckedChange = {
+                                showAnnotationsInConcert = it
+                                preferencesManager.setAnnotationLayerVisibility(file.id, file.memberId, it)
+                            },
+                            modifier = Modifier.scale(0.7f)
+                        )
+                    }
+
+                    // Scroll mode toggle (only for PDF files)
+                    if (file.fileType == com.troubashare.domain.model.FileType.PDF) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "View Mode",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            SingleChoiceSegmentedButtonRow {
+                                SegmentedButton(
+                                    selected = !useScrollMode,
+                                    onClick = {
+                                        useScrollMode = false
+                                        preferencesManager.setScrollMode(file.id, file.memberId, false)
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                ) {
+                                    Text(
+                                        text = "Swipe",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                                SegmentedButton(
+                                    selected = useScrollMode,
+                                    onClick = {
+                                        useScrollMode = true
+                                        preferencesManager.setScrollMode(file.id, file.memberId, true)
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                                ) {
+                                    Text(
+                                        text = "Scroll",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 Spacer(modifier = Modifier.width(8.dp))
             }

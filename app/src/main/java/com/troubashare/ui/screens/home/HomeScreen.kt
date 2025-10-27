@@ -1,5 +1,6 @@
 package com.troubashare.ui.screens.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -540,12 +541,15 @@ fun ConcertModeSetupDialog(
                     
                     setlists.forEach { setlist ->
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedSetlistId = setlist.id }
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = selectedSetlistId == setlist.id,
-                                onClick = { selectedSetlistId = setlist.id }
+                                onClick = null // Let the Row handle the click
                             )
                             Text(
                                 text = setlist.name,
@@ -567,12 +571,15 @@ fun ConcertModeSetupDialog(
                     
                     members.forEach { member ->
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedMemberId = member.id }
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = selectedMemberId == member.id,
-                                onClick = { selectedMemberId = member.id }
+                                onClick = null // Let the Row handle the click
                             )
                             Text(
                                 text = member.name,

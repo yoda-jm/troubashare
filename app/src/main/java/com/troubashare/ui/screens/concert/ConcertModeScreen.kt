@@ -246,6 +246,12 @@ fun ConcertModeScreen(
                         annotationRepository.getAnnotationsByFileAndMember(file.id, memberId)
                     }.collectAsState(initial = emptyList())
 
+                    // Load scroll mode preference
+                    val preferencesManager = remember { com.troubashare.data.preferences.AnnotationPreferencesManager(context) }
+                    val useScrollMode = remember(file.id, memberId) {
+                        preferencesManager.getScrollMode(file.id, memberId)
+                    }
+
                     // Use annotated multi-page PDF viewer for concert mode
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -262,6 +268,7 @@ fun ConcertModeScreen(
                                     fileId = file.id,
                                     memberId = memberId,
                                     annotations = annotations,
+                                    useScrollMode = useScrollMode,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {

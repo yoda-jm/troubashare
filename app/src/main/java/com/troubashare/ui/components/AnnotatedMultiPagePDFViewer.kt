@@ -5,12 +5,20 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,14 +42,18 @@ import java.io.File
 
 /**
  * Multi-page PDF viewer with annotation overlay support for Concert Mode.
- * Displays all pages with their saved annotations in a scrollable column.
+ * Displays all pages with their saved annotations in either scroll or swipe mode.
+ *
+ * @param useScrollMode If true, displays pages in a scrollable column. If false, uses swipe/page mode.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AnnotatedMultiPagePDFViewer(
     filePath: String,
     fileId: String,
     memberId: String,
     annotations: List<Annotation>,
+    useScrollMode: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var pageCount by remember { mutableIntStateOf(0) }
@@ -127,53 +139,97 @@ fun AnnotatedMultiPagePDFViewer(
                 )
             }
             pageBitmaps.isNotEmpty() -> {
-                // Show all pages in a scrollable column with annotations
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background), // Theme-aware background
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    itemsIndexed(pageBitmaps) { pageIndex, bitmap ->
-                        // Get annotations for this specific page
-                        val pageAnnotations = annotations.filter { it.pageNumber == pageIndex }
+                if (useScrollMode) {
+                    // Scroll mode: Show all pages in a scrollable column with annotations
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background), // Theme-aware background
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(8.dp)
+                    ) {
+                        itemsIndexed(pageBitmaps) { pageIndex, bitmap ->
+                            PDFPageWithAnnotations(
+                                pageIndex = pageIndex,
+                                bitmap = bitmap,
+                                annotations = annotations
+                            )
+                        }
+                    }
+                } else {
+                    // Swipe mode: Show pages one at a time with horizontal paging and vertical scroll
+                    val pagerState = rememberPagerState(pageCount = { pageBitmaps.size })
 
-                        Surface(
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    ) { pageIndex ->
+                        // Each page is independently scrollable vertically
+                        val scrollState = rememberScrollState()
+
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .wrapContentHeight(),
-                            color = Color.White,
-                            shadowElevation = 2.dp,
-                            shape = MaterialTheme.shapes.small
+                                .fillMaxSize()
+                                .verticalScroll(scrollState)
+                                .padding(8.dp),
+                            contentAlignment = Alignment.TopCenter
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .wrapContentHeight()
-                            ) {
-                                // PDF page image
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = "PDF Page ${pageIndex + 1}",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .wrapContentHeight(),
-                                    contentScale = ContentScale.FillWidth
-                                )
-
-                                // Annotation overlay - must match Image size exactly
-                                if (pageAnnotations.isNotEmpty()) {
-                                    AnnotationOverlayForPage(
-                                        annotations = pageAnnotations,
-                                        pdfBitmap = bitmap,
-                                        modifier = Modifier.matchParentSize() // Match the Image size exactly
-                                    )
-                                }
-                            }
+                            PDFPageWithAnnotations(
+                                pageIndex = pageIndex,
+                                bitmap = pageBitmaps[pageIndex],
+                                annotations = annotations,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PDFPageWithAnnotations(
+    pageIndex: Int,
+    bitmap: Bitmap,
+    annotations: List<Annotation>,
+    modifier: Modifier = Modifier
+) {
+    // Get annotations for this specific page
+    val pageAnnotations = annotations.filter { it.pageNumber == pageIndex }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentHeight(),
+        color = Color.White,
+        shadowElevation = 2.dp,
+        shape = MaterialTheme.shapes.small
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight()
+        ) {
+            // PDF page image
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "PDF Page ${pageIndex + 1}",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
+                contentScale = ContentScale.FillWidth
+            )
+
+            // Annotation overlay - must match Image size exactly
+            if (pageAnnotations.isNotEmpty()) {
+                AnnotationOverlayForPage(
+                    annotations = pageAnnotations,
+                    pdfBitmap = bitmap,
+                    modifier = Modifier.matchParentSize() // Match the Image size exactly
+                )
             }
         }
     }

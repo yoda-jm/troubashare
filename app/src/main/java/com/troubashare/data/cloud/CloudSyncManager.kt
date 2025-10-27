@@ -792,6 +792,7 @@ class CloudSyncManager @Inject constructor(
                                         },
                                         color = cloudAnnotation.strokeColor.toLong(),
                                         strokeWidth = cloudAnnotation.strokeWidth,
+                                        opacity = 1f, // Default to full opacity for cloud sync strokes
                                         tool = DrawingTool.valueOf(cloudAnnotation.type.takeIf {
                                             DrawingTool.values().any { tool -> tool.name == it }
                                         } ?: "PEN"),

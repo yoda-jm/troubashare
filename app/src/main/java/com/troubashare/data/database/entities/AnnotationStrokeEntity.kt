@@ -22,6 +22,7 @@ data class AnnotationStrokeEntity(
     val annotationId: String,
     val color: Long,
     val strokeWidth: Float,
+    val opacity: Float = 1f, // Opacity (0.0-1.0), 0.4-0.5 is highlighter mode
     val tool: String, // DrawingTool.name
     val text: String? = null, // For TEXT tool annotations
     val createdAt: Long = System.currentTimeMillis()

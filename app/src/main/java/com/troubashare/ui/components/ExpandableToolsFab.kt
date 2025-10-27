@@ -49,12 +49,17 @@ fun ExpandableToolsFab(
         ) {
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Include all tools in the FAB
-                val allTools = DrawingTool.entries.toTypedArray()
-                
-                allTools.reversed().forEach { tool ->
+                // Only show active tools (not deprecated ones)
+                val activeTools = listOf(
+                    DrawingTool.SELECT,
+                    DrawingTool.TEXT,
+                    DrawingTool.PEN,
+                    DrawingTool.PAN_ZOOM
+                )
+
+                activeTools.reversed().forEach { tool ->
                     ToolFab(
                         tool = tool,
                         isSelected = drawingState.tool == tool,
@@ -69,29 +74,39 @@ fun ExpandableToolsFab(
         
         // Stack indicators (show when collapsed to indicate more options)
         Box {
-            // Background shadow FABs to indicate stack
+            // Background shadow FABs to indicate stack - more visible layers
             if (!isExpanded) {
+                // Third layer - most offset
                 FloatingActionButton(
                     onClick = { },
-                    modifier = Modifier.offset(x = (-4).dp, y = (-4).dp),
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                    modifier = Modifier.offset(x = (-8).dp, y = (-8).dp),
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
                     contentColor = Color.Transparent
                 ) { }
-                
+
+                // Second layer - medium offset
                 FloatingActionButton(
                     onClick = { },
-                    modifier = Modifier.offset(x = (-2).dp, y = (-2).dp),
+                    modifier = Modifier.offset(x = (-5).dp, y = (-5).dp),
                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                     contentColor = Color.Transparent
                 ) { }
+
+                // First layer - slight offset
+                FloatingActionButton(
+                    onClick = { },
+                    modifier = Modifier.offset(x = (-2).dp, y = (-2).dp),
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    contentColor = Color.Transparent
+                ) { }
             }
-            
+
             // Main FAB
             FloatingActionButton(
                 onClick = { isExpanded = !isExpanded },
-                containerColor = if (isExpanded) 
-                    MaterialTheme.colorScheme.secondary 
-                else 
+                containerColor = if (isExpanded)
+                    MaterialTheme.colorScheme.secondary
+                else
                     MaterialTheme.colorScheme.primary,
                 contentColor = if (isExpanded)
                     MaterialTheme.colorScheme.onSecondary
@@ -136,10 +151,11 @@ private fun ToolFab(
 private fun getToolIcon(tool: DrawingTool): ImageVector {
     return when (tool) {
         DrawingTool.PEN -> Icons.Default.Edit
-        DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
-        DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
         DrawingTool.TEXT -> Icons.Default.TextFields
         DrawingTool.SELECT -> Icons.Default.TouchApp
         DrawingTool.PAN_ZOOM -> Icons.Default.OpenWith
+        // Legacy tools (for backward compatibility with existing annotations)
+        DrawingTool.HIGHLIGHTER -> Icons.Default.FormatColorFill
+        DrawingTool.ERASER -> Icons.AutoMirrored.Filled.Backspace
     }
 }

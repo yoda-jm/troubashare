@@ -126,7 +126,6 @@ private fun ToolbarContent(
     fun updateStrokeProperty(updatedStroke: com.troubashare.domain.model.AnnotationStroke) {
         val oldStroke = drawingState.selectedStroke
         if (oldStroke != null && onStrokeUpdated != null) {
-            println("DEBUG AnnotationToolbar: Updating stroke property - color=${updatedStroke.color}, width=${updatedStroke.strokeWidth}")
             // Update UI state immediately
             onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
             // Update memory (triggers auto-save in ViewModel)
@@ -247,6 +246,18 @@ private fun ToolbarContent(
         // Show annotation list and editing controls when in SELECT mode (VERTICAL/LANDSCAPE LAYOUT)
         if (drawingState.tool == DrawingTool.SELECT && onDeleteStroke != null) {
             HorizontalDivider()
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Stroke selection dropdown
+            StrokeSelectionDropdown(
+                annotations = annotations,
+                selectedStroke = drawingState.selectedStroke,
+                onStrokeSelected = { stroke ->
+                    onDrawingStateChanged(drawingState.copy(selectedStroke = stroke))
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -792,44 +803,15 @@ private fun ToolbarContent(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "All Annotations",
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-
-            val allStrokes = annotations.flatMap { annotation ->
-                annotation.strokes.map { stroke -> annotation to stroke }
-            }
-
-            if (allStrokes.isEmpty()) {
-                Text(
-                    text = "No annotations on this page",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 150.dp)
-                ) {
-                    items(allStrokes) { (annotation, stroke) ->
-                        SelectableAnnotationListItem(
-                            stroke = stroke,
-                            isSelected = drawingState.selectedStroke?.id == stroke.id,
-                            onSelect = {
-                                onDrawingStateChanged(drawingState.copy(selectedStroke = stroke))
-                            },
-                            onDelete = { onDeleteStroke.invoke(stroke) }
-                        )
-                    }
-                }
-            }
+            // Stroke selection dropdown
+            StrokeSelectionDropdown(
+                annotations = annotations,
+                selectedStroke = drawingState.selectedStroke,
+                onStrokeSelected = { stroke ->
+                    onDrawingStateChanged(drawingState.copy(selectedStroke = stroke))
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
         
         // Save annotations button
@@ -847,6 +829,102 @@ private fun ToolbarContent(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Save as PDF")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StrokeSelectionDropdown(
+    annotations: List<com.troubashare.domain.model.Annotation>,
+    selectedStroke: com.troubashare.domain.model.AnnotationStroke?,
+    onStrokeSelected: (com.troubashare.domain.model.AnnotationStroke?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val allStrokes = annotations.flatMap { it.strokes }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = selectedStroke?.let { stroke ->
+                "${stroke.tool.displayName} - ${stroke.strokeWidth.toInt()}px"
+            } ?: "None",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Select Stroke") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // "None" option
+            DropdownMenuItem(
+                text = { Text("None") },
+                onClick = {
+                    onStrokeSelected(null)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Close, contentDescription = null)
+                }
+            )
+
+            HorizontalDivider()
+
+            // Stroke items
+            allStrokes.forEach { stroke ->
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Color square
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .background(
+                                        try {
+                                            Color(stroke.color.toUInt().toInt())
+                                        } catch (e: Exception) {
+                                            Color.Black
+                                        },
+                                        CircleShape
+                                    )
+                                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                            )
+
+                            Column {
+                                Text(
+                                    text = when (stroke.tool) {
+                                        DrawingTool.TEXT -> stroke.text ?: "Text"
+                                        else -> stroke.tool.displayName
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "Size: ${stroke.strokeWidth.toInt()}px • ${(stroke.opacity * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onStrokeSelected(stroke)
+                        expanded = false
+                    }
+                )
             }
         }
     }

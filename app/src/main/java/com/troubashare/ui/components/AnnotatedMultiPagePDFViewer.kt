@@ -242,7 +242,7 @@ private fun AnnotationOverlayForPage(
                         DrawingTool.PEN -> {
                             drawPath(
                                 path = path,
-                                color = strokeColor,
+                                color = strokeColor.copy(alpha = stroke.opacity),
                                 style = Stroke(
                                     width = stroke.strokeWidth * strokeScaleFactor,
                                     cap = StrokeCap.Round,
@@ -253,7 +253,7 @@ private fun AnnotationOverlayForPage(
                         DrawingTool.HIGHLIGHTER -> {
                             drawPath(
                                 path = path,
-                                color = strokeColor.copy(alpha = 0.5f),
+                                color = strokeColor.copy(alpha = stroke.opacity),
                                 style = Stroke(
                                     width = stroke.strokeWidth * 1.3f * strokeScaleFactor,
                                     cap = StrokeCap.Round,

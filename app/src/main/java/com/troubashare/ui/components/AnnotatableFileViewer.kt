@@ -676,7 +676,7 @@ fun AnnotationOverlay(
                         com.troubashare.domain.model.DrawingTool.PEN -> {
                             drawPath(
                                 path = path,
-                                color = strokeColor,
+                                color = strokeColor.copy(alpha = stroke.opacity),
                                 style = androidx.compose.ui.graphics.drawscope.Stroke(
                                     width = stroke.strokeWidth,
                                     cap = androidx.compose.ui.graphics.StrokeCap.Round,
@@ -687,7 +687,7 @@ fun AnnotationOverlay(
                         com.troubashare.domain.model.DrawingTool.HIGHLIGHTER -> {
                             drawPath(
                                 path = path,
-                                color = strokeColor.copy(alpha = 0.5f),
+                                color = strokeColor.copy(alpha = stroke.opacity),
                                 style = androidx.compose.ui.graphics.drawscope.Stroke(
                                     width = stroke.strokeWidth * 1.3f,
                                     cap = androidx.compose.ui.graphics.StrokeCap.Round,

@@ -129,6 +129,9 @@ fun TroubaShareNavigation(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
+                onSetlistClick = { setlistId ->
+                    navController.navigate(Screen.SetlistEditor.createRoute(setlistId))
+                },
                 onEditSetlist = { setlistId ->
                     navController.navigate(Screen.SetlistEditor.createRoute(setlistId))
                 }

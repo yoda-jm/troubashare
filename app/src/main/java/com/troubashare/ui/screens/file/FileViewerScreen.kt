@@ -28,13 +28,9 @@ fun FileViewerScreen(
 ) {
     // Use the file's member ID - this represents the member who owns this specific file
     // For annotation purposes, we should use the file owner's member ID
-    val currentMemberId = songFile.memberId.ifBlank { 
-        println("DEBUG FileViewerScreen: WARNING - songFile.memberId is blank, using fallback")
-        "unknown-member" 
+    val currentMemberId = songFile.memberId.ifBlank {
+        "unknown-member"
     }
-    
-    // DEBUG: Log member ID being used
-    println("DEBUG FileViewerScreen: Using memberId: '$currentMemberId' (from songFile.memberId='${songFile.memberId}')")
     
     val context = LocalContext.current
     val database = remember { TroubaShareDatabase.getInstance(context) }
@@ -42,9 +38,7 @@ fun FileViewerScreen(
     val annotationRepository = remember { AnnotationRepository(database) }
     val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
     
-    val viewModel: FileViewerViewModel = viewModel { 
-        println("DEBUG FileViewerScreen: Creating ViewModel with fileId='${songFile.id}', memberId='$currentMemberId', songId='${songFile.songId}'")
-        println("DEBUG FileViewerScreen: SongFile details - fileName='${songFile.fileName}', filePath='${songFile.filePath}'")
+    val viewModel: FileViewerViewModel = viewModel {
         FileViewerViewModel(
             annotationRepository = annotationRepository,
             songRepository = songRepository,
@@ -62,7 +56,6 @@ fun FileViewerScreen(
     // Save annotations when leaving the screen
     DisposableEffect(Unit) {
         onDispose {
-            println("DEBUG FileViewerScreen: Screen disposing, saving annotations immediately")
             viewModel.saveAnnotationsNow()
         }
     }

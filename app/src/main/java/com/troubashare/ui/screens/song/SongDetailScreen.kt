@@ -1,8 +1,11 @@
 package com.troubashare.ui.screens.song
 
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -275,7 +278,6 @@ fun MemberFileSection(
     isUploading: Boolean,
     modifier: Modifier = Modifier
 ) {
-    var showAnnotations by remember { mutableStateOf(true) }
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -287,41 +289,14 @@ fun MemberFileSection(
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            // Member name and annotation toggle
-            val hasAnnotations = files.any { it.fileType == com.troubashare.domain.model.FileType.ANNOTATION }
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = member.name,
-                    style = MaterialTheme.typography.titleSmall
-                )
-                
-                // Annotation visibility toggle (only show if there are annotations)
-                if (hasAnnotations) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Show annotations",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Switch(
-                            checked = showAnnotations,
-                            onCheckedChange = { showAnnotations = it },
-                            modifier = Modifier.scale(0.8f)
-                        )
-                    }
-                }
-            }
-            
+            // Member name
+            Text(
+                text = member.name,
+                style = MaterialTheme.typography.titleSmall
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             // Upload buttons
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -332,19 +307,18 @@ fun MemberFileSection(
                     enabled = !isUploading,
                     modifier = Modifier.weight(1f)
                 )
-                
+
                 ImagePickerButton(
                     onImageSelected = onFileUpload,
-                    text = "Image", 
+                    text = "Image",
                     enabled = !isUploading,
                     modifier = Modifier.weight(1f)
                 )
             }
-            
-            // Display uploaded files
+
+            // Display uploaded files - hide annotation files since they're managed through properties dialog
             val displayFiles = files.filter { file ->
-                // Show all non-annotation files, and annotation files only if toggle is enabled
-                file.fileType != com.troubashare.domain.model.FileType.ANNOTATION || showAnnotations
+                file.fileType != com.troubashare.domain.model.FileType.ANNOTATION
             }
             
             if (displayFiles.isNotEmpty()) {
@@ -372,6 +346,7 @@ fun FileItem(
     modifier: Modifier = Modifier
 ) {
     var showNameDialog by remember { mutableStateOf(false) }
+    var showPropertiesDialog by remember { mutableStateOf(false) }
     var nameInput by remember { mutableStateOf("") }
     // State for annotation visibility in concert mode (per file)
     val context = LocalContext.current
@@ -475,25 +450,7 @@ fun FileItem(
                             )
                         }
                     }
-                    
-                    // Layer naming button (only for files with annotations)
-                    if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
-                        IconButton(
-                            onClick = {
-                                nameInput = layerName
-                                showNameDialog = true
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit layer name",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                    
+
                     // Show "annotation layer" label for annotation files
                     if (file.fileType == com.troubashare.domain.model.FileType.ANNOTATION) {
                         Text(
@@ -501,17 +458,6 @@ fun FileItem(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.padding(end = 8.dp)
-                        )
-                    }
-                    
-                    // Annotation layer indicator
-                    if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Draw,
-                            contentDescription = "Has annotation layer",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.tertiary
                         )
                     }
                 }
@@ -523,94 +469,42 @@ fun FileItem(
                     color = MaterialTheme.colorScheme.outline
                 )
                 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = file.fileType.name,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    
-                    if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
-                        Text(
-                            text = " • Annotated",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                }
+                Text(
+                    text = file.fileType.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            
-            // Concert mode annotation toggle (only for files that have annotations)
-            if (hasAnnotations && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Concert",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Switch(
-                            checked = showAnnotationsInConcert,
-                            onCheckedChange = {
-                                showAnnotationsInConcert = it
-                                preferencesManager.setAnnotationLayerVisibility(file.id, file.memberId, it)
-                            },
-                            modifier = Modifier.scale(0.7f)
-                        )
-                    }
 
-                    // Scroll mode toggle (only for PDF files)
-                    if (file.fileType == com.troubashare.domain.model.FileType.PDF) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "View Mode",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            SingleChoiceSegmentedButtonRow {
-                                SegmentedButton(
-                                    selected = !useScrollMode,
-                                    onClick = {
-                                        useScrollMode = false
-                                        preferencesManager.setScrollMode(file.id, file.memberId, false)
-                                    },
-                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                                ) {
-                                    Text(
-                                        text = "Swipe",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                                SegmentedButton(
-                                    selected = useScrollMode,
-                                    onClick = {
-                                        useScrollMode = true
-                                        preferencesManager.setScrollMode(file.id, file.memberId, true)
-                                    },
-                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                                ) {
-                                    Text(
-                                        text = "Scroll",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.width(8.dp))
+            // Annotation indicator icon for PDFs
+            if (file.fileType == com.troubashare.domain.model.FileType.PDF && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                Icon(
+                    imageVector = if (hasAnnotations) Icons.Default.Edit else Icons.Default.EditOff,
+                    contentDescription = if (hasAnnotations) "Has annotations" else "No annotations",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (hasAnnotations)
+                        MaterialTheme.colorScheme.tertiary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
             }
-            
+
+            // Properties button for PDF files
+            if (file.fileType == com.troubashare.domain.model.FileType.PDF && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+                IconButton(
+                    onClick = { showPropertiesDialog = true },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "File properties",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -659,6 +553,318 @@ fun FileItem(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // Properties dialog for PDF files
+    if (showPropertiesDialog) {
+        // Load annotations and calculate stroke count
+        val database = remember { TroubaShareDatabase.getInstance(context) }
+        val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
+        val annotations by annotationRepository.getAnnotationsByFileAndMember(file.id, file.memberId)
+            .collectAsState(initial = emptyList())
+
+        // Calculate total stroke count
+        val totalStrokes = annotations.sumOf { it.strokes.size }
+
+        // Get PDF page count
+        var pageCount by remember { mutableStateOf<Int?>(null) }
+        LaunchedEffect(file.filePath) {
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val pdfFile = java.io.File(file.filePath)
+                    if (pdfFile.exists()) {
+                        val pfd = android.os.ParcelFileDescriptor.open(pdfFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                        val renderer = android.graphics.pdf.PdfRenderer(pfd)
+                        pageCount = renderer.pageCount
+                        renderer.close()
+                        pfd.close()
+                    }
+                }
+            } catch (e: Exception) {
+                pageCount = null
+            }
+        }
+
+        // State for showing delete confirmation
+        var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showPropertiesDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text("PDF Properties")
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
+                    // File Information Section
+                    Text(
+                        text = "File Information",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            PropertyRow(
+                                label = "File Name",
+                                value = file.fileName
+                            )
+                            PropertyRow(
+                                label = "Pages",
+                                value = pageCount?.toString() ?: "Loading..."
+                            )
+                            PropertyRow(
+                                label = "File ID",
+                                value = file.id.take(8) + "..."
+                            )
+                            if (hasAnnotations) {
+                                val annotationFile = annotationFiles.firstOrNull()
+                                annotationFile?.let {
+                                    PropertyRow(
+                                        label = "Annotation ID",
+                                        value = it.id.take(8) + "..."
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Annotations Section
+                    if (hasAnnotations) {
+                        Text(
+                            text = "Annotations",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                PropertyRow(
+                                    label = "Total Strokes",
+                                    value = totalStrokes.toString()
+                                )
+
+                                HorizontalDivider()
+
+                                // Layer name editing
+                                OutlinedTextField(
+                                    value = layerName,
+                                    onValueChange = { newName ->
+                                        layerName = newName
+                                        val finalName = newName.trim().ifEmpty { file.fileName }
+                                        preferencesManager.setAnnotationLayerName(
+                                            file.id,
+                                            file.memberId,
+                                            finalName.takeIf { it != file.fileName }
+                                        )
+                                    },
+                                    label = { Text("Layer Name") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                HorizontalDivider()
+
+                                // Delete annotations button
+                                OutlinedButton(
+                                    onClick = { showDeleteConfirmation = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    ),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteForever,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Delete All Annotations")
+                                }
+                            }
+                        }
+                    }
+
+                    // Concert Mode Settings Section
+                    Text(
+                        text = "Concert Mode Settings",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Show annotations in concert toggle
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Show Annotations",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Switch(
+                                    checked = showAnnotationsInConcert,
+                                    onCheckedChange = {
+                                        showAnnotationsInConcert = it
+                                        preferencesManager.setAnnotationLayerVisibility(file.id, file.memberId, it)
+                                    },
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                            }
+
+                            HorizontalDivider()
+
+                            // View mode selection
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "View Mode",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                SingleChoiceSegmentedButtonRow(
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    SegmentedButton(
+                                        selected = !useScrollMode,
+                                        onClick = {
+                                            useScrollMode = false
+                                            preferencesManager.setScrollMode(file.id, file.memberId, false)
+                                        },
+                                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                    ) {
+                                        Text("Swipe")
+                                    }
+                                    SegmentedButton(
+                                        selected = useScrollMode,
+                                        onClick = {
+                                            useScrollMode = true
+                                            preferencesManager.setScrollMode(file.id, file.memberId, true)
+                                        },
+                                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                                    ) {
+                                        Text("Scroll")
+                                    }
+                                }
+                                Text(
+                                    text = if (useScrollMode) "Continuous vertical scrolling through all pages" else "Swipe horizontally between pages",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPropertiesDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+
+        // Delete confirmation dialog
+        if (showDeleteConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmation = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text("Delete Annotations?")
+                    }
+                },
+                text = {
+                    Text("This will permanently delete all annotations for this PDF. This action cannot be undone.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            // Delete the annotation file
+                            annotationFiles.firstOrNull()?.let { annotFile ->
+                                onDelete()  // This will delete the annotation file
+                            }
+                            showDeleteConfirmation = false
+                            showPropertiesDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmation = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PropertyRow(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium
         )
     }
 }

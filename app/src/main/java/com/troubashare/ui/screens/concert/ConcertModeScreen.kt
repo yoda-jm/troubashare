@@ -80,7 +80,11 @@ fun ConcertModeScreen(
     
     // Controls visibility state
     var showControls by remember { mutableStateOf(true) }
-    
+
+    // Page tracking for PDF swipe mode
+    var currentPage by remember { mutableIntStateOf(0) }
+    var totalPages by remember { mutableIntStateOf(0) }
+
     // Auto-hide controls after 10 seconds
     LaunchedEffect(showControls) {
         if (showControls) {
@@ -252,6 +256,12 @@ fun ConcertModeScreen(
                         preferencesManager.getScrollMode(file.id, memberId)
                     }
 
+                    // Reset page tracking when song changes
+                    LaunchedEffect(uiState.currentSongIndex) {
+                        currentPage = 0
+                        totalPages = 0
+                    }
+
                     // Use annotated multi-page PDF viewer for concert mode
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -269,6 +279,10 @@ fun ConcertModeScreen(
                                     memberId = memberId,
                                     annotations = annotations,
                                     useScrollMode = useScrollMode,
+                                    onPageChanged = { page, total ->
+                                        currentPage = page
+                                        totalPages = total
+                                    },
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -367,8 +381,11 @@ fun ConcertModeScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                    // Show song position, and page position if in PDF swipe mode
+                    val songPosition = "Song ${uiState.currentSongIndex + 1} of ${uiState.totalSongs}"
+                    val pagePosition = if (totalPages > 0) " (Page ${currentPage + 1}/$totalPages)" else ""
                     Text(
-                        text = "${uiState.currentSongIndex + 1} of ${uiState.totalSongs}",
+                        text = songPosition + pagePosition,
                         color = Color.White.copy(alpha = 0.9f),
                         style = MaterialTheme.typography.bodyMedium
                     )

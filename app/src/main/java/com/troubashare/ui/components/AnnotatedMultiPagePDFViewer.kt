@@ -45,6 +45,7 @@ import java.io.File
  * Displays all pages with their saved annotations in either scroll or swipe mode.
  *
  * @param useScrollMode If true, displays pages in a scrollable column. If false, uses swipe/page mode.
+ * @param onPageChanged Callback invoked when current page changes (only in swipe mode). Receives current page (0-based) and total pages.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -54,6 +55,7 @@ fun AnnotatedMultiPagePDFViewer(
     memberId: String,
     annotations: List<Annotation>,
     useScrollMode: Boolean = true,
+    onPageChanged: ((currentPage: Int, totalPages: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var pageCount by remember { mutableIntStateOf(0) }
@@ -159,6 +161,13 @@ fun AnnotatedMultiPagePDFViewer(
                 } else {
                     // Swipe mode: Show pages one at a time with horizontal paging and vertical scroll
                     val pagerState = rememberPagerState(pageCount = { pageBitmaps.size })
+
+                    // Report page changes to parent
+                    LaunchedEffect(pagerState.currentPage, pageBitmaps.size) {
+                        if (pageBitmaps.isNotEmpty()) {
+                            onPageChanged?.invoke(pagerState.currentPage, pageBitmaps.size)
+                        }
+                    }
 
                     HorizontalPager(
                         state = pagerState,

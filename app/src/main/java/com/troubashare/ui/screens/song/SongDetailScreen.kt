@@ -373,17 +373,13 @@ fun FileItem(
         }
     }
     
-    // Check if this file has associated annotation layers
-    // Try multiple identification patterns since navigation can cause ID inconsistencies  
-    val hasAnnotations = allFiles.any { annotationFile ->
-        annotationFile.fileType == com.troubashare.domain.model.FileType.ANNOTATION && (
-            // Pattern 1: Direct file ID match (when file ID is available)
-            (file.id.isNotBlank() && annotationFile.fileName.contains("annotations_${file.id}_")) ||
-            // Pattern 2: For now, assume any annotation file in the song belongs to this file
-            // (This is a simple assumption that works when there's only one main file per song)
-            annotationFile.fileName.startsWith("annotations_")
-        )
+    // Check if this file has associated annotation layers - match by file ID only
+    val fileAnnotationFiles = allFiles.filter { annotationFile ->
+        annotationFile.fileType == com.troubashare.domain.model.FileType.ANNOTATION &&
+        file.id.isNotBlank() &&
+        annotationFile.fileName.contains("annotations_${file.id}_")
     }
+    val hasAnnotations = fileAnnotationFiles.isNotEmpty()
     
     Card(
         onClick = {
@@ -464,7 +460,7 @@ fun FileItem(
                 
                 // DEBUG: Show fileId to help identify which file is which
                 Text(
-                    text = "ID: ${file.id.take(8)}...",
+                    text = "ID: ${file.id.take(6)}...${file.id.takeLast(6)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -476,8 +472,9 @@ fun FileItem(
                 )
             }
 
-            // Annotation indicator icon for PDFs
-            if (file.fileType == com.troubashare.domain.model.FileType.PDF && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+            // Annotation indicator icon for PDFs and Images
+            if ((file.fileType == com.troubashare.domain.model.FileType.PDF || file.fileType == com.troubashare.domain.model.FileType.IMAGE)
+                && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
                 Icon(
                     imageVector = if (hasAnnotations) Icons.Default.Edit else Icons.Default.EditOff,
                     contentDescription = if (hasAnnotations) "Has annotations" else "No annotations",
@@ -490,8 +487,9 @@ fun FileItem(
                 Spacer(modifier = Modifier.width(4.dp))
             }
 
-            // Properties button for PDF files
-            if (file.fileType == com.troubashare.domain.model.FileType.PDF && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
+            // Properties button for PDF and Image files
+            if ((file.fileType == com.troubashare.domain.model.FileType.PDF || file.fileType == com.troubashare.domain.model.FileType.IMAGE)
+                && file.fileType != com.troubashare.domain.model.FileType.ANNOTATION) {
                 IconButton(
                     onClick = { showPropertiesDialog = true },
                     modifier = Modifier.size(40.dp)
@@ -556,7 +554,7 @@ fun FileItem(
         )
     }
 
-    // Properties dialog for PDF files
+    // Properties dialog for PDF and Image files
     if (showPropertiesDialog) {
         // Load annotations and calculate stroke count
         val database = remember { TroubaShareDatabase.getInstance(context) }
@@ -567,22 +565,24 @@ fun FileItem(
         // Calculate total stroke count
         val totalStrokes = annotations.sumOf { it.strokes.size }
 
-        // Get PDF page count
+        // Get PDF page count (only for PDFs)
         var pageCount by remember { mutableStateOf<Int?>(null) }
         LaunchedEffect(file.filePath) {
-            try {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val pdfFile = java.io.File(file.filePath)
-                    if (pdfFile.exists()) {
-                        val pfd = android.os.ParcelFileDescriptor.open(pdfFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
-                        val renderer = android.graphics.pdf.PdfRenderer(pfd)
-                        pageCount = renderer.pageCount
-                        renderer.close()
-                        pfd.close()
+            if (file.fileType == com.troubashare.domain.model.FileType.PDF) {
+                try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val pdfFile = java.io.File(file.filePath)
+                        if (pdfFile.exists()) {
+                            val pfd = android.os.ParcelFileDescriptor.open(pdfFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                            val renderer = android.graphics.pdf.PdfRenderer(pfd)
+                            pageCount = renderer.pageCount
+                            renderer.close()
+                            pfd.close()
+                        }
                     }
+                } catch (e: Exception) {
+                    pageCount = null
                 }
-            } catch (e: Exception) {
-                pageCount = null
             }
         }
 
@@ -601,7 +601,7 @@ fun FileItem(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Text("PDF Properties")
+                    Text(if (file.fileType == com.troubashare.domain.model.FileType.PDF) "PDF Properties" else "Image Properties")
                 }
             },
             text = {
@@ -629,23 +629,62 @@ fun FileItem(
                                 label = "File Name",
                                 value = file.fileName
                             )
-                            PropertyRow(
-                                label = "Pages",
-                                value = pageCount?.toString() ?: "Loading..."
-                            )
+                            // Only show page count for PDFs
+                            if (file.fileType == com.troubashare.domain.model.FileType.PDF) {
+                                PropertyRow(
+                                    label = "Pages",
+                                    value = pageCount?.toString() ?: "Loading..."
+                                )
+                            }
                             PropertyRow(
                                 label = "File ID",
-                                value = file.id.take(8) + "..."
+                                value = file.id.take(6) + "..." + file.id.takeLast(6)
                             )
                             if (hasAnnotations) {
-                                val annotationFile = annotationFiles.firstOrNull()
+                                val annotationFile = fileAnnotationFiles.firstOrNull()
                                 annotationFile?.let {
                                     PropertyRow(
                                         label = "Annotation ID",
-                                        value = it.id.take(8) + "..."
+                                        value = it.id.take(6) + "..." + it.id.takeLast(6)
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    // Display Settings Section
+                    Text(
+                        text = "Display Settings",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Layer name editing
+                            OutlinedTextField(
+                                value = layerName,
+                                onValueChange = { newName ->
+                                    layerName = newName
+                                    val finalName = newName.trim().ifEmpty { file.fileName }
+                                    preferencesManager.setAnnotationLayerName(
+                                        file.id,
+                                        file.memberId,
+                                        finalName.takeIf { it != file.fileName }
+                                    )
+                                },
+                                label = { Text("Display Name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                supportingText = { Text("Custom name shown in concert mode") }
+                            )
                         }
                     }
 
@@ -669,25 +708,6 @@ fun FileItem(
                                 PropertyRow(
                                     label = "Total Strokes",
                                     value = totalStrokes.toString()
-                                )
-
-                                HorizontalDivider()
-
-                                // Layer name editing
-                                OutlinedTextField(
-                                    value = layerName,
-                                    onValueChange = { newName ->
-                                        layerName = newName
-                                        val finalName = newName.trim().ifEmpty { file.fileName }
-                                        preferencesManager.setAnnotationLayerName(
-                                            file.id,
-                                            file.memberId,
-                                            finalName.takeIf { it != file.fileName }
-                                        )
-                                    },
-                                    label = { Text("Layer Name") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
                                 )
 
                                 HorizontalDivider()
@@ -749,45 +769,48 @@ fun FileItem(
                                 )
                             }
 
-                            HorizontalDivider()
+                            // Only show view mode for PDFs (images don't have multiple pages)
+                            if (file.fileType == com.troubashare.domain.model.FileType.PDF) {
+                                HorizontalDivider()
 
-                            // View mode selection
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "View Mode",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                SingleChoiceSegmentedButtonRow(
-                                    modifier = Modifier.fillMaxWidth()
+                                // View mode selection
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    SegmentedButton(
-                                        selected = !useScrollMode,
-                                        onClick = {
-                                            useScrollMode = false
-                                            preferencesManager.setScrollMode(file.id, file.memberId, false)
-                                        },
-                                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                    Text(
+                                        text = "View Mode",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    SingleChoiceSegmentedButtonRow(
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("Swipe")
+                                        SegmentedButton(
+                                            selected = !useScrollMode,
+                                            onClick = {
+                                                useScrollMode = false
+                                                preferencesManager.setScrollMode(file.id, file.memberId, false)
+                                            },
+                                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                        ) {
+                                            Text("Swipe")
+                                        }
+                                        SegmentedButton(
+                                            selected = useScrollMode,
+                                            onClick = {
+                                                useScrollMode = true
+                                                preferencesManager.setScrollMode(file.id, file.memberId, true)
+                                            },
+                                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                                        ) {
+                                            Text("Scroll")
+                                        }
                                     }
-                                    SegmentedButton(
-                                        selected = useScrollMode,
-                                        onClick = {
-                                            useScrollMode = true
-                                            preferencesManager.setScrollMode(file.id, file.memberId, true)
-                                        },
-                                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                                    ) {
-                                        Text("Scroll")
-                                    }
+                                    Text(
+                                        text = if (useScrollMode) "Continuous vertical scrolling through all pages" else "Swipe horizontally between pages",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                                Text(
-                                    text = if (useScrollMode) "Continuous vertical scrolling through all pages" else "Swipe horizontally between pages",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                         }
                     }
@@ -823,8 +846,8 @@ fun FileItem(
                 confirmButton = {
                     Button(
                         onClick = {
-                            // Delete the annotation file
-                            annotationFiles.firstOrNull()?.let { annotFile ->
+                            // Delete the annotation file for this specific file
+                            fileAnnotationFiles.firstOrNull()?.let { annotFile ->
                                 onDelete()  // This will delete the annotation file
                             }
                             showDeleteConfirmation = false

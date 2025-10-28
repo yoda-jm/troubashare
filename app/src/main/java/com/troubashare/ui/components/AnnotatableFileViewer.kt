@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.drawText
@@ -48,7 +49,7 @@ fun AnnotatableFileViewer(
             viewModel = viewModel,
             modifier = modifier
         )
-        "JPG", "JPEG", "PNG", "GIF", "WEBP" -> AnnotatableImageViewer(
+        "IMAGE", "JPG", "JPEG", "PNG", "GIF", "WEBP" -> AnnotatableImageViewer(
             filePath = filePath,
             fileName = fileName,
             viewModel = viewModel,
@@ -764,6 +765,7 @@ private fun createPathFromPoints(points: List<com.troubashare.domain.model.Annot
     return path
 }
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun AnnotatableImageViewer(
     filePath: String,
@@ -773,80 +775,310 @@ fun AnnotatableImageViewer(
 ) {
     val context = LocalContext.current
     val file = File(filePath)
-    
+
     val drawingState by viewModel.drawingState.collectAsState()
     val annotations by viewModel.currentPageAnnotations.collectAsState()
-    
+
     // Images are single page, so always page 0
     LaunchedEffect(Unit) {
         viewModel.setCurrentPage(0)
     }
-    
-    Column(modifier = modifier.fillMaxSize()) {
-        // Annotation Toolbar
-        AnnotationToolbar(
-            drawingState = drawingState,
-            onDrawingStateChanged = viewModel::updateDrawingState,
-            annotations = annotations,
-            onDeleteStroke = viewModel::deleteStroke,
-            onSaveAnnotations = {
-                // TODO: Implement save logic with file picker
-            },
-            onStrokeUpdated = viewModel::updateStroke
-        )
-        
-        // Image Content with Annotations
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            if (file.exists()) {
-                // For images, we would need to load the image as a bitmap first
-                // and then overlay it with annotations. This is a simplified version.
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    if (isLandscape) {
+        // Landscape layout with sidebar
+        Row(modifier = modifier.fillMaxSize()) {
+            // Drawing toolbar on the left in landscape - declared FIRST so it renders on top
+            if (drawingState.isDrawing) {
+                Surface(
+                    modifier = Modifier.width(220.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 8.dp
+                ) {
+                    AnnotationToolbar(
+                        drawingState = drawingState,
+                        onDrawingStateChanged = viewModel::updateDrawingState,
+                        isVertical = true,
+                        modifier = Modifier.fillMaxHeight(),
+                        annotations = annotations,
+                        onDeleteStroke = viewModel::deleteStroke,
+                        onSaveAnnotations = {},
+                        onStrokeUpdated = viewModel::updateStroke
+                    )
+                }
+            }
+
+            // Image content - declared AFTER toolbar, fills remaining space
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clipToBounds() // Prevent zoomed/panned content from escaping layout bounds
+            ) {
+                ImageContent(
+                    file = file,
+                    fileName = fileName,
+                    context = context,
+                    drawingState = drawingState,
+                    annotations = annotations,
+                    viewModel = viewModel
+                )
+            }
+        }
+    } else {
+        // Portrait layout
+        Column(modifier = modifier.fillMaxSize()) {
+            // Drawing toolbar on top in portrait (only when drawing)
+            if (drawingState.isDrawing) {
+                AnnotationToolbar(
+                    drawingState = drawingState,
+                    onDrawingStateChanged = viewModel::updateDrawingState,
+                    isVertical = false,
+                    annotations = annotations,
+                    onDeleteStroke = viewModel::deleteStroke,
+                    onSaveAnnotations = {},
+                    onStrokeUpdated = viewModel::updateStroke
+                )
+            }
+
+            // Image content
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                ImageContent(
+                    file = file,
+                    fileName = fileName,
+                    context = context,
+                    drawingState = drawingState,
+                    annotations = annotations,
+                    viewModel = viewModel
+                )
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun ImageContent(
+    file: File,
+    fileName: String,
+    context: android.content.Context,
+    drawingState: com.troubashare.domain.model.DrawingState,
+    annotations: List<com.troubashare.domain.model.Annotation>,
+    viewModel: FileViewerViewModel
+) {
+    // Image zoom state
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        if (file.exists()) {
+            // Image layer with zoom/pan gestures
+            // When in drawing mode, use pointerInteropFilter to pass events through to toolbar
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clipToBounds() // Prevent zoomed content from escaping bounds
+                    .then(
+                        if (drawingState.isDrawing) {
+                            // In drawing mode: return false to NOT consume events, let them pass through
+                            Modifier.pointerInteropFilter { false }
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY
+                    )
+                    .then(
+                        if (!drawingState.isDrawing) {
+                            // Only add pointer input when NOT in drawing mode
+                            Modifier
+                                .pointerInput(Unit) {
+                                    detectTransformGestures { _, pan, zoom, _ ->
+                                        val newScale = (scale * zoom).coerceIn(0.5f, 3f)
+                                        scale = newScale
+                                        // Adjust pan sensitivity based on current scale for more natural feel
+                                        offsetX += pan.x * scale
+                                        offsetY += pan.y * scale
+                                    }
+                                }
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onDoubleTap = { tapOffset ->
+                                            if (scale > 1f) {
+                                                scale = 1f
+                                                offsetX = 0f
+                                                offsetY = 0f
+                                            } else {
+                                                scale = 2f
+                                                offsetX = (size.width / 2f - tapOffset.x) * (scale - 1f)
+                                                offsetY = (size.height / 2f - tapOffset.y) * (scale - 1f)
+                                            }
+                                        }
+                                    )
+                                }
+                        } else {
+                            Modifier
+                        }
+                    )
+            ) {
+                // Display image
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(file)
                         .crossfade(true)
                         .build(),
                     contentDescription = fileName,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(8.dp),
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
-                
-                // Overlay annotation canvas
-                if (drawingState.isDrawing || annotations.isNotEmpty()) {
-                    AnnotationCanvas(
-                        backgroundBitmap = null, // Would need to load image as bitmap
-                        annotations = annotations,
+            }
+
+            // Overlay annotation canvas when in drawing mode
+            if (drawingState.isDrawing) {
+                AnnotationCanvas(
+                    backgroundBitmap = null,
+                    annotations = annotations,
+                    drawingState = drawingState,
+                    onStrokeAdded = viewModel::addStroke,
+                    onDrawingStateChanged = viewModel::updateDrawingState,
+                    onStrokeUpdated = viewModel::updateStroke,
+                    onZoomGesture = { zoom, pan ->
+                        val newScale = (scale * zoom).coerceIn(0.5f, 3f)
+                        scale = newScale
+                        offsetX += pan.x * scale
+                        offsetY += pan.y * scale
+                    },
+                    onDoubleTap = { tapOffset, canvasSize ->
+                        if (scale > 1f) {
+                            scale = 1f
+                            offsetX = 0f
+                            offsetY = 0f
+                        } else {
+                            scale = 2f
+                            offsetX = (canvasSize.width / 2f - tapOffset.x) * (scale - 1f)
+                            offsetY = (canvasSize.height / 2f - tapOffset.y) * (scale - 1f)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offsetX,
+                            translationY = offsetY
+                        )
+                )
+            } else if (annotations.isNotEmpty()) {
+                // Show annotations overlay when not in drawing mode
+                AnnotationOverlay(
+                    annotations = annotations,
+                    toolbarOffsetX = 0f,
+                    pdfBitmap = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offsetX,
+                            translationY = offsetY
+                        )
+                )
+            }
+
+            // Drawing mode toggle and tools FAB
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Save annotation layer FAB (when in drawing mode)
+                if (drawingState.isDrawing) {
+                    FloatingActionButton(
+                        onClick = {
+                            viewModel.saveAnnotationLayer()
+                        },
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = "Save Annotation Layer"
+                        )
+                    }
+                }
+
+                // Expandable tools FAB (only when in drawing mode)
+                if (drawingState.isDrawing) {
+                    ExpandableToolsFab(
                         drawingState = drawingState,
-                        onStrokeAdded = viewModel::addStroke,
-                        onDrawingStateChanged = viewModel::updateDrawingState,
-                        onStrokeUpdated = viewModel::updateStroke,
-                        modifier = Modifier.fillMaxSize()
+                        onDrawingStateChanged = viewModel::updateDrawingState
                     )
                 }
-            } else {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+
+                // Main drawing mode toggle FAB
+                FloatingActionButton(
+                    onClick = viewModel::toggleDrawingMode,
+                    containerColor = if (drawingState.isDrawing)
+                        MaterialTheme.colorScheme.secondary
+                    else
+                        MaterialTheme.colorScheme.primary
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Image file not found",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
+                        imageVector = if (drawingState.isDrawing) Icons.Default.Visibility else Icons.Default.Edit,
+                        contentDescription = if (drawingState.isDrawing) "Exit Drawing Mode" else "Enter Drawing Mode"
                     )
                 }
             }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Image file not found",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         }
+    }
+
+    // Text input dialog
+    if (drawingState.showTextDialog && drawingState.textDialogPosition != null) {
+        TextInputDialog(
+            onTextEntered = { text ->
+                viewModel.addTextAnnotation(text, drawingState.textDialogPosition)
+            },
+            onDismiss = {
+                viewModel.updateDrawingState(
+                    drawingState.copy(
+                        showTextDialog = false,
+                        textDialogPosition = null
+                    )
+                )
+            }
+        )
     }
 }

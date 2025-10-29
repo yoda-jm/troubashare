@@ -503,6 +503,21 @@ fun AnnotatedImageViewer(
     modifier: Modifier = Modifier
 ) {
     val file = File(filePath)
+    var imageBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    // Load image bitmap for aspect ratio calculation
+    LaunchedEffect(filePath) {
+        withContext(Dispatchers.IO) {
+            try {
+                if (file.exists()) {
+                    imageBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                }
+            } catch (e: Exception) {
+                // If bitmap loading fails, we'll still show the image but overlay might not align perfectly
+                imageBitmap = null
+            }
+        }
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -532,6 +547,7 @@ fun AnnotatedImageViewer(
                     if (imageAnnotations.isNotEmpty()) {
                         AnnotationOverlayForImage(
                             annotations = imageAnnotations,
+                            imageBitmap = imageBitmap,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -554,6 +570,7 @@ fun AnnotatedImageViewer(
 @Composable
 private fun AnnotationOverlayForImage(
     annotations: List<Annotation>,
+    imageBitmap: android.graphics.Bitmap? = null,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -564,15 +581,47 @@ private fun AnnotationOverlayForImage(
         val canvasWidth = size.width
         val canvasHeight = size.height
 
+        // Calculate effective image display area (must match ContentScale.Fit behavior)
+        // ContentScale.Fit scales to fit within bounds while maintaining aspect ratio
+        val effectiveWidth: Float
+        val effectiveHeight: Float
+        val pdfOffsetX: Float
+        val pdfOffsetY: Float
+
+        if (imageBitmap != null) {
+            val imageAspectRatio = imageBitmap.width.toFloat() / imageBitmap.height.toFloat()
+            val canvasAspectRatio = canvasWidth / canvasHeight
+
+            if (imageAspectRatio > canvasAspectRatio) {
+                // Image is wider - fit to width, letterbox top/bottom
+                effectiveWidth = canvasWidth
+                effectiveHeight = canvasWidth / imageAspectRatio
+                pdfOffsetX = 0f
+                pdfOffsetY = (canvasHeight - effectiveHeight) / 2f
+            } else {
+                // Image is taller - fit to height, letterbox left/right
+                effectiveHeight = canvasHeight
+                effectiveWidth = canvasHeight * imageAspectRatio
+                pdfOffsetX = (canvasWidth - effectiveWidth) / 2f
+                pdfOffsetY = 0f
+            }
+        } else {
+            // Fallback: assume full canvas (for backward compatibility)
+            effectiveWidth = canvasWidth
+            effectiveHeight = canvasHeight
+            pdfOffsetX = 0f
+            pdfOffsetY = 0f
+        }
+
         // For images, annotations are stored in relative coordinates (0.0-1.0)
-        // We need to scale them to the canvas size
+        // We need to scale them to the effective image display area
         annotations.forEach { annotationItem ->
             annotationItem.strokes.forEach { stroke ->
                 if (stroke.points.isNotEmpty()) {
                     val canvasPoints = stroke.points.map { point ->
                         point.copy(
-                            x = point.x * canvasWidth,
-                            y = point.y * canvasHeight
+                            x = point.x * effectiveWidth + pdfOffsetX,
+                            y = point.y * effectiveHeight + pdfOffsetY
                         )
                     }
 

@@ -872,6 +872,22 @@ private fun ImageContent(
     annotations: List<com.troubashare.domain.model.Annotation>,
     viewModel: FileViewerViewModel
 ) {
+    // Load image bitmap for aspect ratio calculation
+    var imageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(file.absolutePath) {
+        withContext(Dispatchers.IO) {
+            try {
+                if (file.exists()) {
+                    imageBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                }
+            } catch (e: Exception) {
+                // If bitmap loading fails, annotations might not align perfectly
+                imageBitmap = null
+            }
+        }
+    }
+
     // Image zoom state
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -950,7 +966,7 @@ private fun ImageContent(
             // Overlay annotation canvas when in drawing mode
             if (drawingState.isDrawing) {
                 AnnotationCanvas(
-                    backgroundBitmap = null,
+                    backgroundBitmap = imageBitmap?.asImageBitmap(),
                     annotations = annotations,
                     drawingState = drawingState,
                     onStrokeAdded = viewModel::addStroke,
@@ -987,7 +1003,7 @@ private fun ImageContent(
                 AnnotationOverlay(
                     annotations = annotations,
                     toolbarOffsetX = 0f,
-                    pdfBitmap = null,
+                    pdfBitmap = imageBitmap,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(

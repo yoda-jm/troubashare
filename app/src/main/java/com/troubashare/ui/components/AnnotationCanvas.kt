@@ -166,10 +166,12 @@ fun AnnotationCanvas(
                                 val allStrokes = annotations.flatMap { it.strokes } + localStrokes
                                 val tappedStroke = findStrokeAtPoint(allStrokes, downPosition, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
 
-                                // Check if we should prepare for drag-to-move
+                                // Check if we should prepare for drag-to-move or resize
                                 var canDragSelectedStroke = false
+                                var resizeHandle: ResizeHandle? = null
+
                                 if (tappedStroke?.id == drawingState.selectedStroke?.id && drawingState.selectedStroke != null && onStrokeUpdated != null) {
-                                    // Check if inside bounding box
+                                    // Check if inside bounding box or on a resize handle
                                     val selectedStroke = drawingState.selectedStroke
                                     val canvasPoints = selectedStroke.points.map { point ->
                                         AnnotationPoint(
@@ -180,13 +182,20 @@ fun AnnotationCanvas(
                                         )
                                     }
                                     val bounds = calculateStrokeBounds(canvasPoints)
-                                    canDragSelectedStroke = downPosition.x >= bounds.left &&
-                                                           downPosition.x <= bounds.right &&
-                                                           downPosition.y >= bounds.top &&
-                                                           downPosition.y <= bounds.bottom
 
-                                    if (canDragSelectedStroke) {
-                                        currentPoints = listOf(AnnotationPoint(downPosition.x, downPosition.y, 1f, downTime))
+                                    // Check if tapping a resize handle first (priority over move)
+                                    resizeHandle = detectResizeHandle(downPosition, bounds)
+
+                                    if (resizeHandle == null) {
+                                        // Not on a handle, check if inside bounds for move
+                                        canDragSelectedStroke = downPosition.x >= bounds.left &&
+                                                               downPosition.x <= bounds.right &&
+                                                               downPosition.y >= bounds.top &&
+                                                               downPosition.y <= bounds.bottom
+
+                                        if (canDragSelectedStroke) {
+                                            currentPoints = listOf(AnnotationPoint(downPosition.x, downPosition.y, 1f, downTime))
+                                        }
                                     }
                                 }
 
@@ -200,7 +209,20 @@ fun AnnotationCanvas(
                                 // For persistence, we need the database version (original position + old edits)
                                 val dbStrokeAtDragStart = allStrokes.find { it.id == drawingState.selectedStroke?.id }
 
-                                println("DEBUG AnnotationCanvas: Drag starting - currentStroke color=${currentStroke?.color}, dbStroke color=${dbStrokeAtDragStart?.color}")
+                                // Store initial bounds for resize calculation
+                                val initialBounds = if (resizeHandle != null && currentStroke != null) {
+                                    val canvasPoints = currentStroke.points.map { point ->
+                                        AnnotationPoint(
+                                            x = point.x * effectiveWidth + pdfOffsetX,
+                                            y = point.y * effectiveHeight + pdfOffsetY,
+                                            pressure = point.pressure,
+                                            timestamp = point.timestamp
+                                        )
+                                    }
+                                    calculateStrokeBounds(canvasPoints)
+                                } else null
+
+                                println("DEBUG AnnotationCanvas: Drag starting - currentStroke color=${currentStroke?.color}, dbStroke color=${dbStrokeAtDragStart?.color}, resizeHandle=${resizeHandle}")
 
                                 // Wait for drag or release
                                 val result = drag(down.id) { change ->
@@ -210,7 +232,45 @@ fun AnnotationCanvas(
                                     if (totalDrag > tapThreshold) {
                                         hasDragged = true
 
-                                        if (canDragSelectedStroke && currentStroke != null) {
+                                        if (resizeHandle != null && currentStroke != null && initialBounds != null) {
+                                            // Resize the selected stroke
+                                            change.consume()
+
+                                            val newBounds = calculateNewBounds(initialBounds, resizeHandle, change.position, downPosition)
+
+                                            // Calculate scale factors
+                                            val scaleX = newBounds.width / initialBounds.width
+                                            val scaleY = newBounds.height / initialBounds.height
+
+                                            // Get current bounds in PDF coordinates for transformation
+                                            val oldStroke = currentStroke!! // Save reference before using
+                                            val pdfBounds = calculateStrokeBoundsInPdfCoords(oldStroke.points)
+
+                                            val updatedStroke = oldStroke.copy(
+                                                points = oldStroke.points.map { point ->
+                                                    // Scale each point relative to the bounds origin
+                                                    val relativeX = (point.x - pdfBounds.left) / pdfBounds.width
+                                                    val relativeY = (point.y - pdfBounds.top) / pdfBounds.height
+
+                                                    // Calculate new bounds in PDF coordinates
+                                                    val newPdfLeft = (newBounds.left - pdfOffsetX) / effectiveWidth
+                                                    val newPdfTop = (newBounds.top - pdfOffsetY) / effectiveHeight
+                                                    val newPdfWidth = newBounds.width / effectiveWidth
+                                                    val newPdfHeight = newBounds.height / effectiveHeight
+
+                                                    point.copy(
+                                                        x = newPdfLeft + relativeX * newPdfWidth,
+                                                        y = newPdfTop + relativeY * newPdfHeight
+                                                    )
+                                                }
+                                                // Keep original strokeWidth and opacity unchanged
+                                            )
+
+                                            // Update state for live feedback (no persistence yet)
+                                            onDrawingStateChanged(drawingState.copy(selectedStroke = updatedStroke))
+                                            currentStroke = updatedStroke // Update our local reference
+
+                                        } else if (canDragSelectedStroke && currentStroke != null) {
                                             // Drag the selected stroke - use currentStroke, not drawingState.selectedStroke
                                             change.consume()
 
@@ -238,13 +298,13 @@ fun AnnotationCanvas(
                                     }
                                 }
 
-                                // After drag ends, persist the final position AND any color/width/opacity edits
-                                if (hasDragged && canDragSelectedStroke && currentStroke != null && dbStrokeAtDragStart != null && onStrokeUpdated != null) {
+                                // After drag ends, persist the final position/size AND any color/width/opacity edits
+                                if (hasDragged && (canDragSelectedStroke || resizeHandle != null) && currentStroke != null && dbStrokeAtDragStart != null && onStrokeUpdated != null) {
                                     // Use database version as "old" and final UI version as "new"
-                                    // This preserves all edits (color/width/opacity from before drag + position from drag)
+                                    // This preserves all edits (color/width/opacity from before drag + position/size from drag)
                                     onStrokeUpdated.invoke(dbStrokeAtDragStart, currentStroke!!)
-                                    // Keep the updated stroke selected so we can drag again without reselecting
-                                    // (the onDrawingStateChanged was already called during drag with the final position)
+                                    // Keep the updated stroke selected so we can drag/resize again without reselecting
+                                    // (the onDrawingStateChanged was already called during drag with the final position/size)
                                 }
 
                                 currentPoints = emptyList()
@@ -824,5 +884,120 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCornerHandles(
         color = handleColor,
         radius = handleSize / 2,
         center = Offset(topLeft.x + size.width, topLeft.y + size.height)
+    )
+}
+
+/**
+ * Enum representing which resize handle was grabbed
+ */
+private enum class ResizeHandle {
+    TOP_LEFT,
+    TOP_RIGHT,
+    BOTTOM_LEFT,
+    BOTTOM_RIGHT
+}
+
+/**
+ * Detect which resize handle (if any) was tapped
+ */
+private fun detectResizeHandle(
+    tapPosition: Offset,
+    bounds: androidx.compose.ui.geometry.Rect
+): ResizeHandle? {
+    val handleRadius = 20f // Hit area larger than visual handle for easier interaction
+
+    // Check each corner
+    val corners = listOf(
+        ResizeHandle.TOP_LEFT to Offset(bounds.left, bounds.top),
+        ResizeHandle.TOP_RIGHT to Offset(bounds.right, bounds.top),
+        ResizeHandle.BOTTOM_LEFT to Offset(bounds.left, bounds.bottom),
+        ResizeHandle.BOTTOM_RIGHT to Offset(bounds.right, bounds.bottom)
+    )
+
+    for ((handle, position) in corners) {
+        val distance = kotlin.math.sqrt(
+            (tapPosition.x - position.x) * (tapPosition.x - position.x) +
+            (tapPosition.y - position.y) * (tapPosition.y - position.y)
+        )
+        if (distance <= handleRadius) {
+            return handle
+        }
+    }
+
+    return null
+}
+
+/**
+ * Calculate new bounding box based on which handle is being dragged
+ */
+private fun calculateNewBounds(
+    initialBounds: androidx.compose.ui.geometry.Rect,
+    handle: ResizeHandle,
+    currentPosition: Offset,
+    initialPosition: Offset
+): androidx.compose.ui.geometry.Rect {
+    val dragDelta = currentPosition - initialPosition
+
+    return when (handle) {
+        ResizeHandle.TOP_LEFT -> {
+            androidx.compose.ui.geometry.Rect(
+                left = initialBounds.left + dragDelta.x,
+                top = initialBounds.top + dragDelta.y,
+                right = initialBounds.right,
+                bottom = initialBounds.bottom
+            )
+        }
+        ResizeHandle.TOP_RIGHT -> {
+            androidx.compose.ui.geometry.Rect(
+                left = initialBounds.left,
+                top = initialBounds.top + dragDelta.y,
+                right = initialBounds.right + dragDelta.x,
+                bottom = initialBounds.bottom
+            )
+        }
+        ResizeHandle.BOTTOM_LEFT -> {
+            androidx.compose.ui.geometry.Rect(
+                left = initialBounds.left + dragDelta.x,
+                top = initialBounds.top,
+                right = initialBounds.right,
+                bottom = initialBounds.bottom + dragDelta.y
+            )
+        }
+        ResizeHandle.BOTTOM_RIGHT -> {
+            androidx.compose.ui.geometry.Rect(
+                left = initialBounds.left,
+                top = initialBounds.top,
+                right = initialBounds.right + dragDelta.x,
+                bottom = initialBounds.bottom + dragDelta.y
+            )
+        }
+    }
+}
+
+/**
+ * Calculate stroke bounds in PDF coordinates (0.0 to 1.0 range)
+ */
+private fun calculateStrokeBoundsInPdfCoords(points: List<AnnotationPoint>): androidx.compose.ui.geometry.Rect {
+    if (points.isEmpty()) {
+        return androidx.compose.ui.geometry.Rect.Zero
+    }
+
+    var minX = Float.MAX_VALUE
+    var minY = Float.MAX_VALUE
+    var maxX = Float.MIN_VALUE
+    var maxY = Float.MIN_VALUE
+
+    points.forEach { point ->
+        if (point.x < minX) minX = point.x
+        if (point.y < minY) minY = point.y
+        if (point.x > maxX) maxX = point.x
+        if (point.y > maxY) maxY = point.y
+    }
+
+    return androidx.compose.ui.geometry.Rect(
+        left = minX,
+        top = minY,
+        right = maxX,
+        bottom = maxY
     )
 }

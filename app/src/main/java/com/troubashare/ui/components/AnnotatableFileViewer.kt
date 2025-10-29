@@ -628,29 +628,17 @@ fun AnnotationOverlay(
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
-        
-        // Calculate effective PDF display area (accounting for aspect ratio and ContentScale.Fit)
-        var effectiveWidth = canvasWidth
-        var effectiveHeight = canvasHeight
-        var pdfOffsetX = 0f
-        var pdfOffsetY = 0f
-        
-        if (pdfBitmap != null) {
-            val bitmapAspectRatio = pdfBitmap.width.toFloat() / pdfBitmap.height.toFloat()
-            val canvasAspectRatio = canvasWidth / canvasHeight
-            
-            if (bitmapAspectRatio > canvasAspectRatio) {
-                // PDF is wider - fit to width, letterbox top/bottom
-                effectiveWidth = canvasWidth
-                effectiveHeight = canvasWidth / bitmapAspectRatio
-                pdfOffsetY = (canvasHeight - effectiveHeight) / 2f
-            } else {
-                // PDF is taller - fit to height, letterbox left/right  
-                effectiveHeight = canvasHeight
-                effectiveWidth = canvasHeight * bitmapAspectRatio
-                pdfOffsetX = (canvasWidth - effectiveWidth) / 2f
-            }
-        }
+
+        // Calculate effective display area using shared utility
+        val displayArea = calculateEffectiveDisplayArea(
+            bitmap = pdfBitmap,
+            canvasSize = androidx.compose.ui.geometry.Size(canvasWidth, canvasHeight)
+        )
+
+        val effectiveWidth = displayArea.width
+        val effectiveHeight = displayArea.height
+        val pdfOffsetX = displayArea.offsetX
+        val pdfOffsetY = displayArea.offsetY
         
         // Draw existing annotation strokes (read-only)
         annotations.forEach { annotationItem ->

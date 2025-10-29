@@ -346,43 +346,18 @@ fun AnnotationCanvas(
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
-        
-        // Update effective PDF display area (same logic as AnnotationOverlay)
-        val newEffectiveWidth: Float
-        val newEffectiveHeight: Float
-        val newPdfOffsetX: Float
-        val newPdfOffsetY: Float
-        
-        if (backgroundBitmap != null) {
-            val bitmapAspectRatio = backgroundBitmap.width.toFloat() / backgroundBitmap.height.toFloat()
-            val canvasAspectRatio = canvasWidth / canvasHeight
-            
-            if (bitmapAspectRatio > canvasAspectRatio) {
-                // PDF is wider - fit to width, letterbox top/bottom
-                newEffectiveWidth = canvasWidth
-                newEffectiveHeight = canvasWidth / bitmapAspectRatio
-                newPdfOffsetX = 0f
-                newPdfOffsetY = (canvasHeight - newEffectiveHeight) / 2f
-            } else {
-                // PDF is taller - fit to height, letterbox left/right  
-                newEffectiveHeight = canvasHeight
-                newEffectiveWidth = canvasHeight * bitmapAspectRatio
-                newPdfOffsetX = (canvasWidth - newEffectiveWidth) / 2f
-                newPdfOffsetY = 0f
-            }
-        } else {
-            // Fallback to full canvas if no bitmap available
-            newEffectiveWidth = canvasWidth
-            newEffectiveHeight = canvasHeight
-            newPdfOffsetX = 0f
-            newPdfOffsetY = 0f
-        }
-        
+
+        // Calculate effective display area using shared utility
+        val displayArea = calculateEffectiveDisplayArea(
+            bitmap = backgroundBitmap,
+            canvasSize = androidx.compose.ui.geometry.Size(canvasWidth, canvasHeight)
+        )
+
         // Update state variables
-        effectiveWidth = newEffectiveWidth
-        effectiveHeight = newEffectiveHeight
-        pdfOffsetX = newPdfOffsetX
-        pdfOffsetY = newPdfOffsetY
+        effectiveWidth = displayArea.width
+        effectiveHeight = displayArea.height
+        pdfOffsetX = displayArea.offsetX
+        pdfOffsetY = displayArea.offsetY
         
         // Draw existing annotation strokes (background handled by parent)
         val allStrokes = annotations.flatMap { it.strokes } + localStrokes

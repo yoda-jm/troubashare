@@ -106,6 +106,17 @@ class SongDetailViewModel(
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
+
+    fun moveFile(memberId: String, fileId: String, newPosition: Int) {
+        viewModelScope.launch {
+            val result = songRepository.moveFile(songId, memberId, fileId, newPosition)
+            if (result.isFailure) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = result.exceptionOrNull()?.message ?: "Failed to reorder files"
+                )
+            }
+        }
+    }
 }
 
 data class SongDetailUiState(

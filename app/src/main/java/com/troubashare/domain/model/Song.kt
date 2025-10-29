@@ -21,7 +21,8 @@ data class SongFile(
     val filePath: String,
     val fileType: FileType,
     val fileName: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val displayOrder: Int = 0 // Order for display in lists and concert mode
 )
 
 enum class FileType(val extension: String) {

@@ -27,5 +27,6 @@ data class SongFileEntity(
     val filePath: String,
     val fileType: String, // "PDF", "IMAGE", "ANNOTATION"
     val fileName: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val displayOrder: Int = 0 // Order for display in lists and concert mode
 )

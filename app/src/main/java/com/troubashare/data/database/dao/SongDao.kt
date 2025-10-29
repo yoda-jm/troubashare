@@ -29,21 +29,35 @@ interface SongDao {
     suspend fun deleteSong(song: SongEntity)
     
     // Song Files
-    @Query("SELECT * FROM song_files WHERE songId = :songId")
+    @Query("SELECT * FROM song_files WHERE songId = :songId ORDER BY displayOrder ASC")
     suspend fun getFilesBySongId(songId: String): List<SongFileEntity>
-    
-    @Query("SELECT * FROM song_files WHERE songId = :songId")
+
+    @Query("SELECT * FROM song_files WHERE songId = :songId ORDER BY displayOrder ASC")
     fun getFilesBySongIdFlow(songId: String): Flow<List<SongFileEntity>>
-    
+
     @Query("SELECT COUNT(*) FROM song_files WHERE songId = :songId")
     suspend fun getFileCountBySongId(songId: String): Int
-    
-    @Query("SELECT * FROM song_files WHERE songId = :songId AND memberId = :memberId")
+
+    @Query("SELECT * FROM song_files WHERE songId = :songId AND memberId = :memberId ORDER BY displayOrder ASC")
     suspend fun getFilesBySongAndMember(songId: String, memberId: String): List<SongFileEntity>
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSongFile(file: SongFileEntity)
-    
+
+    @Update
+    suspend fun updateSongFile(file: SongFileEntity)
+
     @Delete
     suspend fun deleteSongFile(file: SongFileEntity)
+
+    // File reordering
+    @Query("UPDATE song_files SET displayOrder = :newOrder WHERE id = :fileId")
+    suspend fun updateFileOrder(fileId: String, newOrder: Int)
+
+    @Transaction
+    suspend fun reorderFiles(files: List<SongFileEntity>) {
+        files.forEach { file ->
+            updateFileOrder(file.id, file.displayOrder)
+        }
+    }
 }

@@ -112,7 +112,10 @@ dependencies {
     
     // File handling
     implementation(libs.androidx.documentfile)
-    
+
+    // Reorderable list for drag-and-drop
+    implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
+
     // Testing
     testImplementation(libs.junit)
     

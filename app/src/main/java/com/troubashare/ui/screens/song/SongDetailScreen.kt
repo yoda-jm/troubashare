@@ -142,6 +142,12 @@ fun SongDetailScreen(
                                                 println("DEBUG SongDetailScreen: Navigating to file - id='${file.id}', songId='${file.songId}', fileName='${file.fileName}'")
                                                 onViewFile(file, currentSong.title, member.name)
                                             },
+                                            onFileMoveUp = { file, position ->
+                                                viewModel.moveFile(member.id, file.id, position - 1)
+                                            },
+                                            onFileMoveDown = { file, position ->
+                                                viewModel.moveFile(member.id, file.id, position + 1)
+                                            },
                                             isUploading = uiState.isUploading
                                         )
                                         
@@ -275,6 +281,8 @@ fun MemberFileSection(
     onFileUpload: (Uri, String) -> Unit,
     onFileDelete: (SongFile) -> Unit,
     onFileView: (SongFile) -> Unit,
+    onFileMoveUp: (SongFile, Int) -> Unit,
+    onFileMoveDown: (SongFile, Int) -> Unit,
     isUploading: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -320,16 +328,21 @@ fun MemberFileSection(
             val displayFiles = files.filter { file ->
                 file.fileType != com.troubashare.domain.model.FileType.ANNOTATION
             }
-            
+
             if (displayFiles.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                displayFiles.forEach { file ->
+                displayFiles.forEachIndexed { index, file ->
                     FileItem(
                         file = file,
                         allFiles = files, // Pass all member files to check for annotations
+                        position = index,
+                        totalFiles = displayFiles.size,
                         onDelete = { onFileDelete(file) },
-                        onView = { onFileView(file) }
+                        onView = { onFileView(file) },
+                        onMoveUp = { onFileMoveUp(file, index) },
+                        onMoveDown = { onFileMoveDown(file, index) }
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
@@ -341,8 +354,12 @@ fun MemberFileSection(
 fun FileItem(
     file: SongFile,
     allFiles: List<SongFile> = emptyList(), // All files to check for annotation layers
+    position: Int,
+    totalFiles: Int,
     onDelete: () -> Unit,
     onView: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showNameDialog by remember { mutableStateOf(false) }
@@ -499,6 +516,46 @@ fun FileItem(
                         contentDescription = "File properties",
                         tint = MaterialTheme.colorScheme.primary
                     )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+
+            // Reordering controls with drag handle style (only show for non-annotation files with multiple files)
+            if (file.fileType != com.troubashare.domain.model.FileType.ANNOTATION && totalFiles > 1) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    IconButton(
+                        onClick = onMoveUp,
+                        enabled = position > 0,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Move up",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Drag handle visual
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag to reorder",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+
+                    IconButton(
+                        onClick = onMoveDown,
+                        enabled = position < totalFiles - 1,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Move down",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.width(4.dp))
             }

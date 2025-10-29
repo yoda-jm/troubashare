@@ -201,7 +201,11 @@ class SongRepository(
             
             val fileId = UUID.randomUUID().toString()
             val now = System.currentTimeMillis()
-            
+
+            // Get existing files for this member to determine displayOrder
+            val existingFiles = songDao.getFilesBySongAndMember(songId, memberId)
+            val nextOrder = existingFiles.maxOfOrNull { it.displayOrder + 1 } ?: 0
+
             val entity = SongFileEntity(
                 id = fileId,
                 songId = songId,
@@ -209,7 +213,8 @@ class SongRepository(
                 filePath = filePath,
                 fileType = fileType.name,
                 fileName = fileName,
-                createdAt = now
+                createdAt = now,
+                displayOrder = nextOrder
             )
             
             println("DEBUG SongRepository: Inserting SongFileEntity - id='${entity.id}', songId='${entity.songId}', fileName='${entity.fileName}'")
@@ -244,7 +249,8 @@ class SongRepository(
                 filePath = songFile.filePath,
                 fileType = songFile.fileType.name,
                 fileName = songFile.fileName,
-                createdAt = songFile.createdAt
+                createdAt = songFile.createdAt,
+                displayOrder = songFile.displayOrder
             )
             
             songDao.deleteSongFile(entity)
@@ -289,6 +295,34 @@ class SongRepository(
             null
         }
     }
+
+    // File reordering - similar to setlist reordering
+    suspend fun moveFile(songId: String, memberId: String, fileId: String, newPosition: Int): Result<Unit> {
+        return try {
+            val files = songDao.getFilesBySongAndMember(songId, memberId)
+                .sortedBy { it.displayOrder }
+                .toMutableList()
+
+            val fileIndex = files.indexOfFirst { it.id == fileId }
+            if (fileIndex == -1) {
+                return Result.failure(Exception("File not found"))
+            }
+
+            // Remove and re-insert at new position
+            val file = files.removeAt(fileIndex)
+            files.add(newPosition, file)
+
+            // Update all positions
+            val updatedFiles = files.mapIndexed { index, fileEntity ->
+                fileEntity.copy(displayOrder = index)
+            }
+
+            songDao.reorderFiles(updatedFiles)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Extension functions
@@ -328,7 +362,8 @@ private fun SongFileEntity.toDomainModel(): SongFile {
         filePath = filePath,
         fileType = FileType.valueOf(fileType),
         fileName = fileName,
-        createdAt = createdAt
+        createdAt = createdAt,
+        displayOrder = displayOrder
     )
     println("DEBUG SongRepository: Converting entity to domain - entityId='$id', domainId='${domainModel.id}', fileName='$fileName'")
     return domainModel

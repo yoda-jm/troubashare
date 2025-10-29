@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -35,21 +38,105 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.file.FileManager
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import java.io.File
 
 /**
  * IMPORTANT: ConcertModeScreen is READ-ONLY for performance viewing.
- * 
+ *
  * NO ANNOTATION EDITING should be implemented here - this is pure read-only display.
  * All annotation management (save, edit, toggle) belongs in the song editing interface (SongDetailScreen).
- * 
+ *
  * Concert mode uses basic FileViewer, not AnnotatableFileViewer.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
+/**
+ * Represents a single page in the concert mode pager.
+ * Can represent:
+ * - A single image file (1 page)
+ * - A PDF in scroll mode (counted as 1 page)
+ * - A single page from a PDF in swipe mode
+ */
+data class ConcertPage(
+    val file: com.troubashare.domain.model.SongFile,
+    val pdfPageIndex: Int? = null // null for images and scroll-mode PDFs, page index for swipe-mode PDFs
+)
+
+/**
+ * Calculate all pages for concert mode display based on member preferences.
+ *
+ * Rules:
+ * - Image: 1 page
+ * - PDF in scroll mode: 1 page (all pages scrollable)
+ * - PDF in swipe mode: N pages (one page per PDF page)
+ */
+suspend fun calculateConcertPages(
+    files: List<com.troubashare.domain.model.SongFile>,
+    memberId: String,
+    context: android.content.Context
+): List<ConcertPage> {
+    val pages = mutableListOf<ConcertPage>()
+    val preferencesManager = com.troubashare.data.preferences.AnnotationPreferencesManager(context)
+
+    // Filter out annotation files - they are not displayable content
+    val displayableFiles = files.filter { it.fileType != com.troubashare.domain.model.FileType.ANNOTATION }
+
+    displayableFiles.forEach { file ->
+        when {
+            file.fileType == com.troubashare.domain.model.FileType.IMAGE -> {
+                // Images always count as 1 page
+                pages.add(ConcertPage(file, pdfPageIndex = null))
+            }
+            file.fileType == com.troubashare.domain.model.FileType.PDF -> {
+                val useScrollMode = preferencesManager.getScrollMode(file.id, memberId)
+
+                if (useScrollMode) {
+                    // Scroll mode PDF counts as 1 page
+                    pages.add(ConcertPage(file, pdfPageIndex = null))
+                } else {
+                    // Swipe mode PDF: add one page per PDF page
+                    val pdfFile = File(file.filePath)
+                    if (pdfFile.exists()) {
+                        try {
+                            val pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                            val renderer = PdfRenderer(pfd)
+                            val pageCount = renderer.pageCount
+                            renderer.close()
+                            pfd.close()
+
+                            // Add each PDF page as a separate concert page
+                            for (i in 0 until pageCount) {
+                                pages.add(ConcertPage(file, pdfPageIndex = i))
+                            }
+                        } catch (e: Exception) {
+                            // If we can't read the PDF, treat it as 1 page
+                            pages.add(ConcertPage(file, pdfPageIndex = null))
+                        }
+                    } else {
+                        // File doesn't exist, still add 1 page to show error
+                        pages.add(ConcertPage(file, pdfPageIndex = null))
+                    }
+                }
+            }
+            else -> {
+                // Other file types (shouldn't happen in concert mode, but handle gracefully)
+                pages.add(ConcertPage(file, pdfPageIndex = null))
+            }
+        }
+    }
+
+    return pages
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ConcertModeScreen(
     setlistId: String,
@@ -239,60 +326,93 @@ fun ConcertModeScreen(
                 }
             }
             uiState.currentSongIndex >= 0 && uiState.currentSongIndex < uiState.songs.size -> {
-                // Display current song's file
+                // Display current song's files with pager
                 val currentSong = uiState.songs[uiState.currentSongIndex]
                 if (currentSong.files.isNotEmpty()) {
-                    // Display the first available file with annotations
-                    val file = currentSong.files.first()
+                    // Calculate all pages for the current song
+                    var concertPages by remember { mutableStateOf<List<ConcertPage>>(emptyList()) }
 
-                    // Load annotations for this file
-                    val annotations by remember(file.id, memberId) {
-                        annotationRepository.getAnnotationsByFileAndMember(file.id, memberId)
-                    }.collectAsState(initial = emptyList())
-
-                    // Load scroll mode preference
-                    val preferencesManager = remember { com.troubashare.data.preferences.AnnotationPreferencesManager(context) }
-                    val useScrollMode = remember(file.id, memberId) {
-                        preferencesManager.getScrollMode(file.id, memberId)
+                    LaunchedEffect(uiState.currentSongIndex, memberId) {
+                        concertPages = withContext(Dispatchers.IO) {
+                            calculateConcertPages(currentSong.files, memberId, context)
+                        }
+                        totalPages = concertPages.size
                     }
 
-                    // Reset page tracking when song changes
-                    LaunchedEffect(uiState.currentSongIndex) {
-                        currentPage = 0
-                        totalPages = 0
-                    }
+                    if (concertPages.isNotEmpty()) {
+                        val pagerState = rememberPagerState(pageCount = { concertPages.size })
 
-                    // Use annotated multi-page PDF viewer for concert mode
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // No Surface wrapper needed - AnnotatedMultiPagePDFViewer handles its own background
-                        Box(
+                        // Update current page when pager changes
+                        LaunchedEffect(pagerState.currentPage) {
+                            currentPage = pagerState.currentPage
+                        }
+
+                        // Reset to first page when song changes
+                        LaunchedEffect(uiState.currentSongIndex) {
+                            currentPage = 0
+                            pagerState.scrollToPage(0)
+                        }
+
+                        HorizontalPager(
+                            state = pagerState,
                             modifier = Modifier.fillMaxSize()
-                        ) {
-                            // Use AnnotatedMultiPagePDFViewer for PDFs to show all pages with annotations
-                            if (file.fileType.name.uppercase() == "PDF") {
-                                com.troubashare.ui.components.AnnotatedMultiPagePDFViewer(
-                                    filePath = file.filePath,
-                                    fileId = file.id,
-                                    memberId = memberId,
-                                    annotations = annotations,
-                                    useScrollMode = useScrollMode,
-                                    onPageChanged = { page, total ->
-                                        currentPage = page
-                                        totalPages = total
-                                    },
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                // For images, use regular FileViewer (annotation support could be added later)
-                                com.troubashare.ui.components.FileViewer(
-                                    filePath = file.filePath,
-                                    fileName = file.fileName,
-                                    fileType = file.fileType.name,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                        ) { pageIndex ->
+                            val page = concertPages[pageIndex]
+                            val file = page.file
+
+                            // Load annotations for this file
+                            val annotations by remember(file.id, memberId) {
+                                annotationRepository.getAnnotationsByFileAndMember(file.id, memberId)
+                            }.collectAsState(initial = emptyList())
+
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when {
+                                    file.fileType == com.troubashare.domain.model.FileType.PDF -> {
+                                        if (page.pdfPageIndex != null) {
+                                            // Swipe mode PDF - show single page
+                                            com.troubashare.ui.components.AnnotatedSinglePagePDFViewer(
+                                                filePath = file.filePath,
+                                                fileId = file.id,
+                                                memberId = memberId,
+                                                pageIndex = page.pdfPageIndex,
+                                                annotations = annotations,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            // Scroll mode PDF - show all pages with internal scrolling
+                                            com.troubashare.ui.components.AnnotatedMultiPagePDFViewer(
+                                                filePath = file.filePath,
+                                                fileId = file.id,
+                                                memberId = memberId,
+                                                annotations = annotations,
+                                                useScrollMode = true,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                    }
+                                    file.fileType == com.troubashare.domain.model.FileType.IMAGE -> {
+                                        // For images, show with annotations
+                                        com.troubashare.ui.components.AnnotatedImageViewer(
+                                            filePath = file.filePath,
+                                            fileId = file.id,
+                                            memberId = memberId,
+                                            annotations = annotations,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    else -> {
+                                        // Fallback for other file types
+                                        com.troubashare.ui.components.FileViewer(
+                                            filePath = file.filePath,
+                                            fileName = file.fileName,
+                                            fileType = file.fileType.name,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

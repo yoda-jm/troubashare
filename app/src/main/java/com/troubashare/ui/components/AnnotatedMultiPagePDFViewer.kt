@@ -384,3 +384,262 @@ private fun createPathFromPoints(points: List<AnnotationPoint>): Path {
     }
     return path
 }
+
+/**
+ * Single-page PDF viewer with annotations for concert mode.
+ * Shows only the specified page from a PDF.
+ */
+@Composable
+fun AnnotatedSinglePagePDFViewer(
+    filePath: String,
+    fileId: String,
+    memberId: String,
+    pageIndex: Int,
+    annotations: List<Annotation>,
+    modifier: Modifier = Modifier
+) {
+    var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(filePath, pageIndex) {
+        isLoading = true
+        error = null
+
+        try {
+            withContext(Dispatchers.IO) {
+                val file = File(filePath)
+                if (!file.exists()) {
+                    error = "File not found"
+                    return@withContext
+                }
+
+                val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = PdfRenderer(pfd)
+
+                if (pageIndex >= renderer.pageCount) {
+                    error = "Page not found"
+                    renderer.close()
+                    pfd.close()
+                    return@withContext
+                }
+
+                val page = renderer.openPage(pageIndex)
+                val bitmap = Bitmap.createBitmap(
+                    page.width * 2,
+                    page.height * 2,
+                    Bitmap.Config.ARGB_8888
+                )
+
+                val canvas = android.graphics.Canvas(bitmap)
+                canvas.drawColor(android.graphics.Color.WHITE)
+
+                page.render(
+                    bitmap,
+                    null,
+                    null,
+                    PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
+                )
+
+                pageBitmap = bitmap
+                page.close()
+                renderer.close()
+                pfd.close()
+                isLoading = false
+            }
+        } catch (e: Exception) {
+            error = "Error loading PDF page: ${e.message}"
+            isLoading = false
+        }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator()
+            }
+            error != null -> {
+                Text(
+                    text = error ?: "Unknown error",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            pageBitmap != null -> {
+                // Scrollable single page
+                val scrollState = rememberScrollState()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                        .padding(8.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    PDFPageWithAnnotations(
+                        pageIndex = pageIndex,
+                        bitmap = pageBitmap!!,
+                        annotations = annotations,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Image viewer with annotations for concert mode.
+ * Shows an image with its annotation overlay.
+ */
+@Composable
+fun AnnotatedImageViewer(
+    filePath: String,
+    fileId: String,
+    memberId: String,
+    annotations: List<Annotation>,
+    modifier: Modifier = Modifier
+) {
+    val file = File(filePath)
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        if (file.exists()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color.White
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Display image
+                    coil.compose.AsyncImage(
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(file)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = file.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+
+                    // Annotation overlay (if there are annotations for page 0 - images are single page)
+                    val imageAnnotations = annotations.filter { it.pageNumber == 0 }
+                    if (imageAnnotations.isNotEmpty()) {
+                        AnnotationOverlayForImage(
+                            annotations = imageAnnotations,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Image file not found",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnnotationOverlayForImage(
+    annotations: List<Annotation>,
+    modifier: Modifier = Modifier
+) {
+    val textMeasurer = rememberTextMeasurer()
+
+    Canvas(
+        modifier = modifier
+    ) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+
+        // For images, annotations are stored in relative coordinates (0.0-1.0)
+        // We need to scale them to the canvas size
+        annotations.forEach { annotationItem ->
+            annotationItem.strokes.forEach { stroke ->
+                if (stroke.points.isNotEmpty()) {
+                    val canvasPoints = stroke.points.map { point ->
+                        point.copy(
+                            x = point.x * canvasWidth,
+                            y = point.y * canvasHeight
+                        )
+                    }
+
+                    val path = createPathFromPoints(canvasPoints)
+                    val strokeColor = try {
+                        Color(stroke.color.toUInt().toInt())
+                    } catch (e: Exception) {
+                        Color.Black
+                    }
+
+                    when (stroke.tool) {
+                        DrawingTool.PEN -> {
+                            drawPath(
+                                path = path,
+                                color = strokeColor.copy(alpha = stroke.opacity),
+                                style = Stroke(
+                                    width = stroke.strokeWidth,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
+                        DrawingTool.HIGHLIGHTER -> {
+                            drawPath(
+                                path = path,
+                                color = strokeColor.copy(alpha = stroke.opacity),
+                                style = Stroke(
+                                    width = stroke.strokeWidth * 1.3f,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
+                        DrawingTool.ERASER -> {
+                            drawPath(
+                                path = path,
+                                color = Color.White.copy(alpha = 1f),
+                                style = Stroke(
+                                    width = stroke.strokeWidth * 3f,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
+                        DrawingTool.TEXT -> {
+                            stroke.text?.let { text ->
+                                if (canvasPoints.isNotEmpty()) {
+                                    val position = canvasPoints.first()
+                                    val textColor = Color.Black
+                                    val fontSize = maxOf(stroke.strokeWidth * 3, 18f).sp
+
+                                    drawText(
+                                        textMeasurer = textMeasurer,
+                                        text = text,
+                                        topLeft = Offset(position.x, position.y),
+                                        style = TextStyle(
+                                            color = textColor,
+                                            fontSize = fontSize
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        else -> { /* Other tools don't render in read-only mode */ }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -103,6 +103,7 @@ fun SimpleGroupSelectionScreen(
         CreateGroupDialog(
             state = createGroupState,
             onGroupNameChange = viewModel::updateGroupName,
+            onGroupTypeChange = viewModel::updateGroupType,
             onMemberNameChange = viewModel::updateMemberName,
             onAddMember = viewModel::addMemberField,
             onRemoveMember = viewModel::removeMemberField,
@@ -194,6 +195,7 @@ fun GroupCard(
 fun CreateGroupDialog(
     state: CreateGroupUiState,
     onGroupNameChange: (String) -> Unit,
+    onGroupTypeChange: (com.troubashare.domain.model.GroupType) -> Unit = {},
     onMemberNameChange: (Int, String) -> Unit,
     onAddMember: () -> Unit,
     onRemoveMember: (Int) -> Unit,
@@ -213,9 +215,30 @@ fun CreateGroupDialog(
                     modifier = Modifier.fillMaxWidth(),
                     isError = state.errorMessage != null
                 )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Group type",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = state.groupType == com.troubashare.domain.model.GroupType.BAND,
+                        onClick = { onGroupTypeChange(com.troubashare.domain.model.GroupType.BAND) }
+                    )
+                    Text("Band", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    RadioButton(
+                        selected = state.groupType == com.troubashare.domain.model.GroupType.ENSEMBLE,
+                        onClick = { onGroupTypeChange(com.troubashare.domain.model.GroupType.ENSEMBLE) }
+                    )
+                    Text("Ensemble / Choir", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
                     text = "Members",
                     style = MaterialTheme.typography.labelLarge

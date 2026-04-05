@@ -32,6 +32,8 @@ data class AnnotationEntity(
     val fileId: String,
     val memberId: String,
     val pageNumber: Int = 0,
+    val scope: String = "PERSONAL", // AnnotationScope.name
+    val partId: String? = null,     // only when scope = PART
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

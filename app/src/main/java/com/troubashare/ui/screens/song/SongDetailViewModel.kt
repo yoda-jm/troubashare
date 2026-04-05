@@ -6,9 +6,11 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.AnnotationRepository
+import com.troubashare.data.repository.FileSelectionRepository
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.domain.model.Annotation
+import com.troubashare.domain.model.FileSelection
 import com.troubashare.domain.model.Group
 import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.SongFile
@@ -22,11 +24,10 @@ class SongDetailViewModel @Inject constructor(
     private val songRepository: SongRepository,
     private val groupRepository: GroupRepository,
     private val annotationRepository: AnnotationRepository,
+    private val fileSelectionRepository: FileSelectionRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    fun getAnnotationsForFile(fileId: String, memberId: String): Flow<List<Annotation>> =
-        annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
     private val songId: String = savedStateHandle["songId"] ?: ""
     private val groupId: String = savedStateHandle["groupId"] ?: ""
 
@@ -48,10 +49,41 @@ class SongDetailViewModel @Inject constructor(
         initialValue = null
     )
 
+    /** All FileSelections for this song, updated reactively. */
+    val fileSelections: StateFlow<List<FileSelection>> =
+        fileSelectionRepository.getSelectionsBySongId(songId)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
+    fun getAnnotationsForFile(fileId: String, memberId: String): Flow<List<Annotation>> =
+        annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
+
+    /** Returns the selected (ordered) files for a member from the pool. */
+    fun getFilesForMember(songFiles: List<SongFile>, memberId: String, partIds: List<String>): List<SongFile> {
+        val selections = fileSelections.value
+        val fileMap = songFiles.associateBy { it.id }
+
+        val partSels = selections
+            .filter { it.selectionType == com.troubashare.domain.model.SelectionType.PART && it.partId in partIds }
+            .sortedBy { it.displayOrder }
+
+        val memberSels = selections
+            .filter { it.selectionType == com.troubashare.domain.model.SelectionType.MEMBER && it.memberId == memberId }
+            .sortedBy { it.displayOrder }
+
+        val seen = mutableSetOf<String>()
+        return (partSels + memberSels).mapNotNull { sel ->
+            if (seen.add(sel.songFileId)) fileMap[sel.songFileId] else null
+        }
+    }
+
     fun uploadFile(memberId: String, fileName: String, uri: Uri, context: Context) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isUploading = true, errorMessage = null)
-            
+
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
                 if (inputStream == null) {
@@ -61,19 +93,19 @@ class SongDetailViewModel @Inject constructor(
                     )
                     return@launch
                 }
-                
+
                 val result = songRepository.addFileToSong(
                     songId = songId,
-                    memberId = memberId,
+                    uploadedBy = memberId,
                     fileName = fileName,
-                    inputStream = inputStream
+                    inputStream = inputStream,
+                    autoSelectForMember = memberId
                 )
-                
+
                 inputStream.close()
-                
+
                 if (result.isSuccess) {
                     _uiState.value = _uiState.value.copy(isUploading = false)
-                    // Song data will automatically refresh through reactive Flow
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isUploading = false,
@@ -92,11 +124,9 @@ class SongDetailViewModel @Inject constructor(
     fun deleteFile(file: SongFile) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(errorMessage = null)
-            
+
             val result = songRepository.removeFileFromSong(file)
-            if (result.isSuccess) {
-                // Song data will automatically refresh through reactive Flow
-            } else {
+            if (result.isFailure) {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = result.exceptionOrNull()?.message ?: "Failed to delete file"
                 )

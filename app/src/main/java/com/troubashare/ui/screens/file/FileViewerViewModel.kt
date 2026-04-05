@@ -361,7 +361,7 @@ class FileViewerViewModel @Inject constructor(
                 val song = songRepository.getSongById(effectiveSongId)
                 val existingAnnotationFile = song?.files?.find { file ->
                     file.fileType == FileType.ANNOTATION &&
-                    file.memberId == fileResolver.getEffectiveMemberId() &&
+                    file.uploadedBy == fileResolver.getEffectiveMemberId() &&
                     file.fileName.startsWith("annotations_${fileResolver.getEffectiveFileId()}_")
                 }
                 val isUpdate = existingAnnotationFile != null
@@ -369,9 +369,10 @@ class FileViewerViewModel @Inject constructor(
                 val fileName = "annotations_${fileResolver.getEffectiveFileId()}_${fileResolver.getEffectiveMemberId()}_${System.currentTimeMillis()}.json"
                 val result = songRepository.addFileToSong(
                     songId = effectiveSongId,
-                    memberId = fileResolver.getEffectiveMemberId(),
+                    uploadedBy = fileResolver.getEffectiveMemberId(),
                     fileName = fileName,
-                    inputStream = ByteArrayInputStream(jsonContent.toByteArray())
+                    inputStream = ByteArrayInputStream(jsonContent.toByteArray()),
+                    autoSelectForMember = null  // annotation files don't need a selection
                 )
 
                 if (result.isSuccess) {
@@ -438,16 +439,17 @@ class FileViewerViewModel @Inject constructor(
             val song = songRepository.getSongById(effectiveSongId)
             val existingAnnotationFile = song?.files?.find { file ->
                 file.fileType == FileType.ANNOTATION &&
-                file.memberId == fileResolver.getEffectiveMemberId() &&
+                file.uploadedBy == fileResolver.getEffectiveMemberId() &&
                 file.fileName.startsWith("annotations_${fileResolver.getEffectiveFileId()}_")
             }
 
             val fileName = "annotations_${fileResolver.getEffectiveFileId()}_${fileResolver.getEffectiveMemberId()}_${System.currentTimeMillis()}.json"
             val result = songRepository.addFileToSong(
                 songId = effectiveSongId,
-                memberId = fileResolver.getEffectiveMemberId(),
+                uploadedBy = fileResolver.getEffectiveMemberId(),
                 fileName = fileName,
-                inputStream = ByteArrayInputStream(jsonContent.toByteArray())
+                inputStream = ByteArrayInputStream(jsonContent.toByteArray()),
+                autoSelectForMember = null  // annotation files don't need a selection
             )
             if (result.isSuccess && existingAnnotationFile != null) {
                 songRepository.removeFileFromSong(existingAnnotationFile, cleanupAnnotations = false)

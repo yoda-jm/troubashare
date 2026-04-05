@@ -5,60 +5,83 @@ import com.troubashare.data.database.entities.AnnotationEntity
 import com.troubashare.data.database.entities.AnnotationStrokeEntity
 import com.troubashare.data.database.entities.AnnotationPointEntity
 import com.troubashare.domain.model.Annotation
+import com.troubashare.domain.model.AnnotationScope
 import com.troubashare.domain.model.AnnotationStroke
 import com.troubashare.domain.model.AnnotationPoint
 import com.troubashare.domain.model.DrawingTool
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import java.util.*
+import java.util.UUID
 
 class AnnotationRepository(
     private val database: TroubaShareDatabase
 ) {
     private val annotationDao = database.annotationDao()
-    
+
+    /** Personal annotations for a member (scope = PERSONAL). */
     fun getAnnotationsByFileAndMember(fileId: String, memberId: String): Flow<List<Annotation>> {
         return annotationDao.getAnnotationsByFileAndMember(fileId, memberId).map { entities ->
-            entities.map { entity ->
-                val strokes = getStrokesForAnnotation(entity.id)
-                entity.toDomainModel(strokes)
-            }
+            entities.map { it.toDomain(getStrokesForAnnotation(it.id)) }
         }
     }
 
     suspend fun getAnnotationsByFileAndMemberOnce(fileId: String, memberId: String): List<Annotation> {
-        val entities = annotationDao.getAnnotationsByFileAndMemberOnce(fileId, memberId)
-        return entities.map { entity ->
-            val strokes = getStrokesForAnnotation(entity.id)
-            entity.toDomainModel(strokes)
+        return annotationDao.getAnnotationsByFileAndMemberOnce(fileId, memberId).map {
+            it.toDomain(getStrokesForAnnotation(it.id))
         }
     }
-    
+
+    /**
+     * All annotations visible to a member: their own + ALL-scoped + PART-scoped for their parts.
+     */
+    fun getVisibleAnnotations(
+        fileId: String,
+        memberId: String,
+        partIds: List<String> = emptyList()
+    ): Flow<List<Annotation>> {
+        return annotationDao.getVisibleAnnotations(fileId, memberId, partIds).map { entities ->
+            entities.map { it.toDomain(getStrokesForAnnotation(it.id)) }
+        }
+    }
+
+    suspend fun getVisibleAnnotationsOnce(
+        fileId: String,
+        memberId: String,
+        partIds: List<String> = emptyList()
+    ): List<Annotation> {
+        return annotationDao.getVisibleAnnotationsOnce(fileId, memberId, partIds).map {
+            it.toDomain(getStrokesForAnnotation(it.id))
+        }
+    }
+
     suspend fun getAnnotationsByPage(fileId: String, memberId: String, pageNumber: Int): List<Annotation> {
-        val entities = annotationDao.getAnnotationsByFileAndMemberAndPage(fileId, memberId, pageNumber)
-        return entities.map { entity ->
-            val strokes = getStrokesForAnnotation(entity.id)
-            entity.toDomainModel(strokes)
+        return annotationDao.getAnnotationsByFileAndMemberAndPage(fileId, memberId, pageNumber).map {
+            it.toDomain(getStrokesForAnnotation(it.id))
         }
     }
-    
-    suspend fun createAnnotation(fileId: String, memberId: String, pageNumber: Int = 0): Annotation {
-        val annotationId = UUID.randomUUID().toString()
+
+    suspend fun createAnnotation(
+        fileId: String,
+        memberId: String,
+        pageNumber: Int = 0,
+        scope: AnnotationScope = AnnotationScope.PERSONAL,
+        partId: String? = null
+    ): Annotation {
         val now = System.currentTimeMillis()
-        
         val entity = AnnotationEntity(
-            id = annotationId,
+            id = UUID.randomUUID().toString(),
             fileId = fileId,
             memberId = memberId,
             pageNumber = pageNumber,
+            scope = scope.name,
+            partId = partId,
             createdAt = now,
             updatedAt = now
         )
-        
         annotationDao.insertAnnotation(entity)
-        return entity.toDomainModel(emptyList())
+        return entity.toDomain(emptyList())
     }
-    
+
     suspend fun addStrokeToAnnotation(annotationId: String, stroke: AnnotationStroke): AnnotationStroke {
         val strokeEntity = AnnotationStrokeEntity(
             id = stroke.id,
@@ -70,10 +93,8 @@ class AnnotationRepository(
             text = stroke.text,
             createdAt = stroke.createdAt
         )
-
         annotationDao.insertStroke(strokeEntity)
-        
-        // Insert points for the stroke
+
         val pointEntities = stroke.points.map { point ->
             AnnotationPointEntity(
                 strokeId = stroke.id,
@@ -83,48 +104,46 @@ class AnnotationRepository(
                 timestamp = point.timestamp
             )
         }
-        
         if (pointEntities.isNotEmpty()) {
             annotationDao.insertPoints(pointEntities)
         }
-        
         return stroke
     }
-    
+
     suspend fun updateAnnotation(annotation: Annotation): Annotation {
         val entity = AnnotationEntity(
             id = annotation.id,
             fileId = annotation.fileId,
             memberId = annotation.memberId,
             pageNumber = annotation.pageNumber,
+            scope = annotation.scope.name,
+            partId = annotation.partId,
             createdAt = annotation.createdAt,
             updatedAt = System.currentTimeMillis()
         )
-
         annotationDao.updateAnnotation(entity)
         return annotation.copy(updatedAt = entity.updatedAt)
     }
 
     suspend fun saveAnnotationWithStrokes(annotation: Annotation) {
-        // Update annotation metadata
         val entity = AnnotationEntity(
             id = annotation.id,
             fileId = annotation.fileId,
             memberId = annotation.memberId,
             pageNumber = annotation.pageNumber,
+            scope = annotation.scope.name,
+            partId = annotation.partId,
             createdAt = annotation.createdAt,
             updatedAt = System.currentTimeMillis()
         )
         annotationDao.updateAnnotation(entity)
 
-        // Delete all existing strokes and points for this annotation
         val existingStrokes = annotationDao.getStrokesByAnnotation(annotation.id)
         existingStrokes.forEach { stroke ->
             annotationDao.deletePointsByStroke(stroke.id)
             annotationDao.deleteStroke(stroke)
         }
 
-        // Insert all current strokes with their points
         annotation.strokes.forEach { stroke ->
             val strokeEntity = AnnotationStrokeEntity(
                 id = stroke.id,
@@ -138,7 +157,6 @@ class AnnotationRepository(
             )
             annotationDao.insertStroke(strokeEntity)
 
-            // Insert points
             val pointEntities = stroke.points.map { point ->
                 AnnotationPointEntity(
                     strokeId = stroke.id,
@@ -153,36 +171,34 @@ class AnnotationRepository(
             }
         }
     }
-    
+
     suspend fun deleteAnnotation(annotation: Annotation) {
         val entity = AnnotationEntity(
             id = annotation.id,
             fileId = annotation.fileId,
             memberId = annotation.memberId,
             pageNumber = annotation.pageNumber,
+            scope = annotation.scope.name,
+            partId = annotation.partId,
             createdAt = annotation.createdAt,
             updatedAt = annotation.updatedAt
         )
-        
         annotationDao.deleteAnnotation(entity)
     }
-    
+
     suspend fun deleteStroke(strokeId: String) {
         val stroke = annotationDao.getStrokeById(strokeId)
         if (stroke != null) {
             annotationDao.deleteStroke(stroke)
         }
     }
-    
+
     suspend fun clearAnnotationsForFile(fileId: String) {
         annotationDao.deleteAnnotationsByFile(fileId)
     }
-    
-    suspend fun removeStrokeFromAnnotation(annotationId: String, stroke: AnnotationStroke) {
-        // Delete points for the stroke
-        annotationDao.deletePointsByStroke(stroke.id)
 
-        // Delete the stroke entity
+    suspend fun removeStrokeFromAnnotation(annotationId: String, stroke: AnnotationStroke) {
+        annotationDao.deletePointsByStroke(stroke.id)
         val strokeEntity = AnnotationStrokeEntity(
             id = stroke.id,
             annotationId = annotationId,
@@ -195,20 +211,12 @@ class AnnotationRepository(
         )
         annotationDao.deleteStroke(strokeEntity)
     }
-    
+
     private suspend fun getStrokesForAnnotation(annotationId: String): List<AnnotationStroke> {
-        val strokeEntities = annotationDao.getStrokesByAnnotation(annotationId)
-        return strokeEntities.map { strokeEntity ->
-            val pointEntities = annotationDao.getPointsByStroke(strokeEntity.id)
-            val points = pointEntities.map { pointEntity ->
-                AnnotationPoint(
-                    x = pointEntity.x,
-                    y = pointEntity.y,
-                    pressure = pointEntity.pressure,
-                    timestamp = pointEntity.timestamp
-                )
+        return annotationDao.getStrokesByAnnotation(annotationId).map { strokeEntity ->
+            val points = annotationDao.getPointsByStroke(strokeEntity.id).map { p ->
+                AnnotationPoint(x = p.x, y = p.y, pressure = p.pressure, timestamp = p.timestamp)
             }
-            
             AnnotationStroke(
                 id = strokeEntity.id,
                 points = points,
@@ -223,15 +231,14 @@ class AnnotationRepository(
     }
 }
 
-// Extension functions for conversion
-private fun AnnotationEntity.toDomainModel(strokes: List<AnnotationStroke>): Annotation {
-    return Annotation(
-        id = id,
-        fileId = fileId,
-        memberId = memberId,
-        pageNumber = pageNumber,
-        strokes = strokes,
-        createdAt = createdAt,
-        updatedAt = updatedAt
-    )
-}
+private fun AnnotationEntity.toDomain(strokes: List<AnnotationStroke>) = Annotation(
+    id = id,
+    fileId = fileId,
+    memberId = memberId,
+    pageNumber = pageNumber,
+    scope = try { AnnotationScope.valueOf(scope) } catch (e: Exception) { AnnotationScope.PERSONAL },
+    partId = partId,
+    strokes = strokes,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)

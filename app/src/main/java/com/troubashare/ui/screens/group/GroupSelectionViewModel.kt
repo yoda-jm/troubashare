@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.domain.model.Group
+import com.troubashare.domain.model.GroupType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -61,6 +62,10 @@ class GroupSelectionViewModel @Inject constructor(
         )
     }
 
+    fun updateGroupType(type: GroupType) {
+        _createGroupState.value = _createGroupState.value.copy(groupType = type)
+    }
+
     fun updateMemberName(index: Int, name: String) {
         val updatedMembers = _createGroupState.value.members.toMutableList()
         if (index < updatedMembers.size) {
@@ -104,6 +109,7 @@ class GroupSelectionViewModel @Inject constructor(
             try {
                 val group = groupRepository.createGroup(
                     name = state.groupName,
+                    type = state.groupType,
                     memberNames = state.members.filter { it.isNotBlank() }
                 )
                 hideCreateGroupDialog()
@@ -204,6 +210,7 @@ data class GroupSelectionUiState(
 
 data class CreateGroupUiState(
     val groupName: String = "",
+    val groupType: GroupType = GroupType.BAND,
     val members: List<String> = listOf(""),
     val isCreating: Boolean = false,
     val errorMessage: String? = null

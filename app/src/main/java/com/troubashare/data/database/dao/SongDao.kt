@@ -9,26 +9,26 @@ import kotlinx.coroutines.flow.Flow
 interface SongDao {
     @Query("SELECT * FROM songs WHERE groupId = :groupId ORDER BY updatedAt DESC")
     fun getSongsByGroupId(groupId: String): Flow<List<SongEntity>>
-    
+
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: String): SongEntity?
-    
+
     @Query("SELECT * FROM songs WHERE id = :id")
     fun getSongByIdFlow(id: String): Flow<SongEntity?>
-    
+
     @Query("SELECT * FROM songs WHERE groupId = :groupId AND (title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%')")
     fun searchSongs(groupId: String, query: String): Flow<List<SongEntity>>
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: SongEntity)
-    
+
     @Update
     suspend fun updateSong(song: SongEntity)
-    
+
     @Delete
     suspend fun deleteSong(song: SongEntity)
-    
-    // Song Files
+
+    // Song Files — the pool (all files for a song, regardless of who uploaded them)
     @Query("SELECT * FROM song_files WHERE songId = :songId ORDER BY displayOrder ASC")
     suspend fun getFilesBySongId(songId: String): List<SongFileEntity>
 
@@ -38,9 +38,9 @@ interface SongDao {
     @Query("SELECT COUNT(*) FROM song_files WHERE songId = :songId")
     suspend fun getFileCountBySongId(songId: String): Int
 
-    @Query("SELECT * FROM song_files WHERE songId = :songId AND memberId = :memberId ORDER BY displayOrder ASC")
-    suspend fun getFilesBySongAndMember(songId: String, memberId: String): List<SongFileEntity>
-    
+    @Query("SELECT * FROM song_files WHERE id = :fileId")
+    suspend fun getSongFileById(fileId: String): SongFileEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSongFile(file: SongFileEntity)
 
@@ -50,7 +50,6 @@ interface SongDao {
     @Delete
     suspend fun deleteSongFile(file: SongFileEntity)
 
-    // File reordering
     @Query("UPDATE song_files SET displayOrder = :newOrder WHERE id = :fileId")
     suspend fun updateFileOrder(fileId: String, newOrder: Int)
 

@@ -8,6 +8,7 @@ data class GroupEntity(
     @PrimaryKey
     val id: String,
     val name: String,
+    val type: String = "BAND", // GroupType.name
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -18,5 +19,14 @@ data class MemberEntity(
     val id: String,
     val groupId: String,
     val name: String,
-    val role: String? = null
+    val partIds: String = "[]" // JSON array of Part IDs
+)
+
+@Entity(tableName = "parts")
+data class PartEntity(
+    @PrimaryKey
+    val id: String,
+    val groupId: String,
+    val name: String,
+    val color: String? = null
 )

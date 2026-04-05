@@ -259,7 +259,7 @@ fun TroubaShareNavigation(
                 songFile = SongFile(
                     id = "",
                     songId = "",
-                    memberId = "",
+                    uploadedBy = "",
                     fileName = fileName,
                     filePath = filePath,
                     fileType = when(fileType.uppercase()) {

@@ -54,7 +54,7 @@ class FileResolver(
             resolvedFileId = matchingFile.id
             resolvedSongId = matchingFile.songId
             if (memberId.isBlank() || memberId == "current-member-id" || memberId == "unknown-member") {
-                resolvedMemberId = matchingFile.memberId
+                resolvedMemberId = matchingFile.uploadedBy
             }
         } catch (_: Exception) {
             // Fall through — effective IDs will use fallback values

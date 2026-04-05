@@ -473,7 +473,7 @@ class CloudSyncManager @Inject constructor(
                 CloudMember(
                     memberId = member.id,
                     name = member.name,
-                    role = member.role,
+                    role = null,
                     addedBy = "current-device",
                     addedAt = System.currentTimeMillis()
                 )
@@ -498,7 +498,7 @@ class CloudSyncManager @Inject constructor(
         
         // Save to local database
         val memberNames = manifest.members.map { it.name }
-        val createdGroup = groupRepository.createGroup(manifest.name, memberNames)
+        val createdGroup = groupRepository.createGroup(name = manifest.name, memberNames = memberNames)
         
         return createdGroup
     }
@@ -934,7 +934,7 @@ class CloudSyncManager @Inject constructor(
                 Log.d(TAG, "Song details - ID: ${song.id}, GroupID: ${song.groupId}")
                 Log.d(TAG, "Total files for song: ${song.files.size}")
                 song.files.forEach { file ->
-                    Log.d(TAG, "  File: ${file.fileName}, Type: ${file.fileType}, Member: ${file.memberId}, Path: ${file.filePath}")
+                    Log.d(TAG, "  File: ${file.fileName}, Type: ${file.fileType}, Member: ${file.uploadedBy}, Path: ${file.filePath}")
                 }
                 
                 // Find all PDF files for this song (multiple members may have PDFs)
@@ -946,12 +946,12 @@ class CloudSyncManager @Inject constructor(
                     
                     // Upload each member's PDF file
                     pdfFiles.forEachIndexed { index, pdfFile ->
-                        Log.d(TAG, "Uploading PDF ${index + 1}/${pdfFiles.size} for ${song.title} (member: ${pdfFile.memberId})")
+                        Log.d(TAG, "Uploading PDF ${index + 1}/${pdfFiles.size} for ${song.title} (member: ${pdfFile.uploadedBy})")
                         
                         val file = java.io.File(pdfFile.filePath)
                         if (file.exists()) {
                             // Create unique filename for each member's PDF
-                            val remoteName = "${song.id}_${pdfFile.memberId}.pdf"
+                            val remoteName = "${song.id}_${pdfFile.uploadedBy}.pdf"
 
                             // Check if PDF needs upload (using checksum comparison)
                             if (needsUpload(file, remoteName, songsFolderId)) {
@@ -969,17 +969,17 @@ class CloudSyncManager @Inject constructor(
                                 }
 
                                 if (uploadResult.isSuccess) {
-                                    Log.d(TAG, "Successfully uploaded PDF for ${song.title} (member: ${pdfFile.memberId})")
+                                    Log.d(TAG, "Successfully uploaded PDF for ${song.title} (member: ${pdfFile.uploadedBy})")
                                     songUploadedSuccessfully = true
                                 } else {
-                                    Log.e(TAG, "Failed to upload PDF for ${song.title} (member: ${pdfFile.memberId}) - ${uploadResult.exceptionOrNull()?.message}")
+                                    Log.e(TAG, "Failed to upload PDF for ${song.title} (member: ${pdfFile.uploadedBy}) - ${uploadResult.exceptionOrNull()?.message}")
                                 }
                             } else {
                                 Log.d(TAG, "PDF ${remoteName} unchanged, skipping upload")
                                 songUploadedSuccessfully = true
                             }
                         } else {
-                            Log.w(TAG, "PDF file not found: ${pdfFile.filePath} for member: ${pdfFile.memberId}")
+                            Log.w(TAG, "PDF file not found: ${pdfFile.filePath} for member: ${pdfFile.uploadedBy}")
                         }
                     }
                     
@@ -1082,7 +1082,7 @@ class CloudSyncManager @Inject constructor(
                             val songFile = SongFile(
                                 id = "${songId}_pdf",
                                 songId = songId,
-                                memberId = "synced_user",
+                                uploadedBy = "synced_user",
                                 filePath = localFilePath,
                                 fileType = FileType.PDF,
                                 fileName = file.name
@@ -1423,9 +1423,9 @@ class CloudSyncManager @Inject constructor(
             val annotations = mutableListOf<com.troubashare.domain.model.Annotation>()
             song.files.filter { it.fileType == FileType.PDF }.forEach { pdfFile ->
                 // Get annotations for this specific member and file
-                val fileAnnotations = annotationRepository.getAnnotationsByFileAndMember(pdfFile.id, pdfFile.memberId).first()
+                val fileAnnotations = annotationRepository.getAnnotationsByFileAndMember(pdfFile.id, pdfFile.uploadedBy).first()
                 annotations.addAll(fileAnnotations)
-                Log.d(TAG, "Found ${fileAnnotations.size} annotations for PDF: ${pdfFile.fileName} (member: ${pdfFile.memberId})")
+                Log.d(TAG, "Found ${fileAnnotations.size} annotations for PDF: ${pdfFile.fileName} (member: ${pdfFile.uploadedBy})")
             }
             
             if (annotations.isEmpty()) {

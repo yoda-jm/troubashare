@@ -12,21 +12,34 @@ data class SongEntity(
     val artist: String? = null,
     val key: String? = null,
     val tempo: Int? = null,
-    val tags: String? = null, // JSON string for simplicity
+    val tags: String? = null, // JSON string
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
 
+/** File in the song's pool — belongs to the song, not to any member. */
 @Entity(tableName = "song_files")
 data class SongFileEntity(
     @PrimaryKey
     val id: String,
     val songId: String,
-    val memberId: String,
+    val uploadedBy: String,  // Member.id — audit only
     val filePath: String,
-    val fileType: String, // "PDF", "IMAGE", "ANNOTATION"
+    val fileType: String,    // FileType.name
     val fileName: String,
-    val createdAt: Long = System.currentTimeMillis(),
-    val displayOrder: Int = 0 // Order for display in lists and concert mode
+    val displayOrder: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** Links a Member (MEMBER type) or Part (PART type) to a file for a song. */
+@Entity(tableName = "file_selections")
+data class FileSelectionEntity(
+    @PrimaryKey
+    val id: String,
+    val songFileId: String,
+    val selectionType: String, // SelectionType.name: "MEMBER" | "PART"
+    val memberId: String? = null,
+    val partId: String? = null,
+    val displayOrder: Int = 0
 )

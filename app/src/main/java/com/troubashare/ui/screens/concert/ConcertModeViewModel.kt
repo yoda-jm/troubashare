@@ -3,6 +3,7 @@ package com.troubashare.ui.screens.concert
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.AnnotationRepository
+import com.troubashare.data.repository.FileSelectionRepository
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.repository.GroupRepository
@@ -18,21 +19,21 @@ class ConcertModeViewModel @Inject constructor(
     private val setlistRepository: SetlistRepository,
     private val songRepository: SongRepository,
     private val groupRepository: GroupRepository,
-    private val annotationRepository: AnnotationRepository
+    private val annotationRepository: AnnotationRepository,
+    private val fileSelectionRepository: FileSelectionRepository
 ) : ViewModel() {
 
     fun getAnnotationsForFile(fileId: String, memberId: String): Flow<List<Annotation>> =
         annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
-    
+
     private val _uiState = MutableStateFlow(ConcertModeUiState())
     val uiState: StateFlow<ConcertModeUiState> = _uiState.asStateFlow()
-    
+
     fun loadConcertData(setlistId: String, memberId: String) {
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-                
-                // Load setlist details
+
                 val setlist = setlistRepository.getSetlistById(setlistId)
                 if (setlist == null) {
                     _uiState.value = _uiState.value.copy(
@@ -41,15 +42,19 @@ class ConcertModeViewModel @Inject constructor(
                     )
                     return@launch
                 }
-                
-                // Load member details
+
                 val member = groupRepository.getMemberById(memberId)
                 val memberName = member?.name ?: "Unknown Member"
-                
-                // Load songs with files for this member
+                val partIds = member?.partIds ?: emptyList()
+
                 val songsWithFiles = setlist.items.map { item ->
                     val song = item.song
-                    val memberFiles = song.files.filter { it.memberId == memberId }
+                    // Use FileSelection to get ordered files visible to this member
+                    val memberFiles = songRepository.getFilesForMember(
+                        songId = song.id,
+                        memberId = memberId,
+                        partIds = partIds
+                    )
                     ConcertSongItem(
                         songId = song.id,
                         title = song.title,
@@ -58,7 +63,7 @@ class ConcertModeViewModel @Inject constructor(
                         notes = item.notes
                     )
                 }
-                
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     setlistName = setlist.name,
@@ -68,7 +73,7 @@ class ConcertModeViewModel @Inject constructor(
                     totalSongs = songsWithFiles.size,
                     currentSongIndex = if (songsWithFiles.isNotEmpty()) 0 else -1
                 )
-                
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -77,18 +82,18 @@ class ConcertModeViewModel @Inject constructor(
             }
         }
     }
-    
+
     fun selectSong(index: Int) {
         val currentState = _uiState.value
         if (index >= 0 && index < currentState.songs.size) {
             _uiState.value = currentState.copy(currentSongIndex = index)
         }
     }
-    
+
     fun goToSong(index: Int) {
         selectSong(index)
     }
-    
+
     fun nextSong() {
         val currentState = _uiState.value
         if (currentState.currentSongIndex < currentState.songs.size - 1) {
@@ -97,7 +102,7 @@ class ConcertModeViewModel @Inject constructor(
             )
         }
     }
-    
+
     fun previousSong() {
         val currentState = _uiState.value
         if (currentState.currentSongIndex > 0) {
@@ -106,27 +111,26 @@ class ConcertModeViewModel @Inject constructor(
             )
         }
     }
-    
+
     fun togglePerformanceMode() {
         _uiState.value = _uiState.value.copy(
             isInPerformanceMode = !_uiState.value.isInPerformanceMode
         )
     }
-    
+
     fun reorderSongs(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
-        if (fromIndex < 0 || toIndex < 0 || 
-            fromIndex >= currentState.songs.size || 
+        if (fromIndex < 0 || toIndex < 0 ||
+            fromIndex >= currentState.songs.size ||
             toIndex >= currentState.songs.size ||
             fromIndex == toIndex) {
             return
         }
-        
+
         val mutableSongs = currentState.songs.toMutableList()
         val songToMove = mutableSongs.removeAt(fromIndex)
         mutableSongs.add(toIndex, songToMove)
-        
-        // Adjust current song index if needed
+
         val newCurrentIndex = when {
             currentState.currentSongIndex == fromIndex -> toIndex
             currentState.currentSongIndex in (fromIndex + 1)..toIndex ->
@@ -135,7 +139,7 @@ class ConcertModeViewModel @Inject constructor(
                 currentState.currentSongIndex + 1
             else -> currentState.currentSongIndex
         }
-        
+
         _uiState.value = currentState.copy(
             songs = mutableSongs,
             currentSongIndex = newCurrentIndex

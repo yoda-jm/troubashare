@@ -104,7 +104,9 @@ fun SongDetailScreen(
 
                                     // Member selection and file upload
                                     group.members.forEach { member ->
-                                        val memberFiles = currentSong.files.filter { it.memberId == member.id }
+                                        val memberFiles = viewModel.getFilesForMember(
+                                            currentSong.files, member.id, member.partIds
+                                        )
                                         MemberFileSection(
                                             member = member,
                                             files = memberFiles,

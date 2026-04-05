@@ -3,15 +3,18 @@ package com.troubashare.data.repository
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.database.entities.SongEntity
 import com.troubashare.data.database.entities.SongFileEntity
+import com.troubashare.data.database.entities.FileSelectionEntity
 import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.SongFile
 import com.troubashare.domain.model.FileType
+import com.troubashare.domain.model.FileSelection
+import com.troubashare.domain.model.SelectionType
 import com.troubashare.data.file.FileManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import java.util.*
+import java.util.UUID
 import java.io.InputStream
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -21,54 +24,46 @@ class SongRepository(
     private val fileManager: FileManager,
     private val annotationRepository: AnnotationRepository
 ) {
-    
+
     private val songDao = database.songDao()
+    private val fileSelectionDao = database.fileSelectionDao()
     private val gson = Gson()
-    
+
     fun getSongsByGroupId(groupId: String): Flow<List<Song>> {
         return songDao.getSongsByGroupId(groupId).map { entities ->
-            entities.map { entity ->
-                // For list view, load files count only for performance
-                entity.toDomainModel(emptyList())
-            }
+            entities.map { it.toDomain(emptyList()) }
         }
     }
-    
+
     suspend fun getSongsWithFilesByGroupId(groupId: String): List<Song> {
         val entities = songDao.getSongsByGroupId(groupId).first()
         return entities.map { entity ->
-            // Load full song data including files for cloud sync
             val files = songDao.getFilesBySongId(entity.id)
-            entity.toDomainModel(files.map { it.toDomainModel() })
+            entity.toDomain(files.map { it.toDomain() })
         }
     }
-    
+
     fun searchSongs(groupId: String, query: String): Flow<List<Song>> {
         return songDao.searchSongs(groupId, query).map { entities ->
-            entities.map { entity ->
-                // For search view, load files count only for performance  
-                entity.toDomainModel(emptyList())
-            }
+            entities.map { it.toDomain(emptyList()) }
         }
     }
-    
+
     suspend fun getSongById(id: String): Song? {
         val entity = songDao.getSongById(id) ?: return null
         val files = songDao.getFilesBySongId(id)
-        return entity.toDomainModel(files.map { it.toDomainModel() })
+        return entity.toDomain(files.map { it.toDomain() })
     }
-    
+
     fun getSongByIdFlow(id: String): Flow<Song?> {
         return combine(
             songDao.getSongByIdFlow(id),
             songDao.getFilesBySongIdFlow(id)
         ) { songEntity, fileEntities ->
-            songEntity?.let { entity ->
-                entity.toDomainModel(fileEntities.map { it.toDomainModel() })
-            }
+            songEntity?.toDomain(fileEntities.map { it.toDomain() })
         }
     }
-    
+
     suspend fun createSong(
         groupId: String,
         title: String,
@@ -80,7 +75,6 @@ class SongRepository(
     ): Song {
         val songId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        
         val entity = SongEntity(
             id = songId,
             groupId = groupId,
@@ -93,11 +87,10 @@ class SongRepository(
             createdAt = now,
             updatedAt = now
         )
-        
         songDao.insertSong(entity)
-        return entity.toDomainModel(emptyList())
+        return entity.toDomain(emptyList())
     }
-    
+
     suspend fun updateSong(song: Song): Song {
         val entity = SongEntity(
             id = song.id,
@@ -111,11 +104,10 @@ class SongRepository(
             createdAt = song.createdAt,
             updatedAt = System.currentTimeMillis()
         )
-        
         songDao.updateSong(entity)
         return song.copy(updatedAt = entity.updatedAt)
     }
-    
+
     suspend fun updateSong(
         songId: String,
         title: String,
@@ -125,9 +117,8 @@ class SongRepository(
         tags: List<String>,
         notes: String?
     ): Song {
-        val existingSong = songDao.getSongById(songId) 
+        val existingSong = songDao.getSongById(songId)
             ?: throw IllegalArgumentException("Song not found")
-        
         val entity = existingSong.copy(
             title = title,
             artist = artist,
@@ -137,12 +128,11 @@ class SongRepository(
             notes = notes,
             updatedAt = System.currentTimeMillis()
         )
-        
         songDao.updateSong(entity)
         val files = songDao.getFilesBySongId(songId)
-        return entity.toDomainModel(files.map { it.toDomainModel() })
+        return entity.toDomain(files.map { it.toDomain() })
     }
-    
+
     suspend fun deleteSong(song: Song) {
         val entity = SongEntity(
             id = song.id,
@@ -158,30 +148,35 @@ class SongRepository(
         )
         songDao.deleteSong(entity)
     }
-    
+
+    /**
+     * Adds a file to the song's pool.
+     * If [autoSelectForMember] is not null, also creates a MEMBER FileSelection.
+     * If [autoSelectForPart] is not null, also creates a PART FileSelection.
+     */
     suspend fun addFileToSong(
         songId: String,
-        memberId: String,
+        uploadedBy: String,
         fileName: String,
-        inputStream: InputStream
+        inputStream: InputStream,
+        autoSelectForMember: String? = uploadedBy,
+        autoSelectForPart: String? = null
     ): Result<SongFile> {
         return try {
             val song = songDao.getSongById(songId)
                 ?: return Result.failure(Exception("Song not found"))
 
-            // Save file to storage
             val result = fileManager.saveFile(
                 groupId = song.groupId,
                 songId = songId,
-                memberId = memberId,
+                memberId = uploadedBy,
                 fileName = fileName,
                 inputStream = inputStream
             )
-            
             if (result.isFailure) {
                 return Result.failure(result.exceptionOrNull() ?: Exception("Failed to save file"))
             }
-            
+
             val filePath = result.getOrThrow()
             val fileType = when {
                 fileManager.isPdfFile(fileName) -> FileType.PDF
@@ -189,32 +184,60 @@ class SongRepository(
                 fileName.endsWith(".json", ignoreCase = true) -> FileType.ANNOTATION
                 else -> return Result.failure(Exception("Unsupported file type"))
             }
-            
+
             val fileId = UUID.randomUUID().toString()
             val now = System.currentTimeMillis()
+            val existingFiles = songDao.getFilesBySongId(songId)
+            val nextOrder = (existingFiles.maxOfOrNull { it.displayOrder } ?: -1) + 1
 
-            // Get existing files for this member to determine displayOrder
-            val existingFiles = songDao.getFilesBySongAndMember(songId, memberId)
-            val nextOrder = existingFiles.maxOfOrNull { it.displayOrder + 1 } ?: 0
-
-            val entity = SongFileEntity(
+            val fileEntity = SongFileEntity(
                 id = fileId,
                 songId = songId,
-                memberId = memberId,
+                uploadedBy = uploadedBy,
                 filePath = filePath,
                 fileType = fileType.name,
                 fileName = fileName,
-                createdAt = now,
-                displayOrder = nextOrder
+                displayOrder = nextOrder,
+                createdAt = now
             )
-            
-            songDao.insertSongFile(entity)
-            Result.success(entity.toDomainModel())
+            songDao.insertSongFile(fileEntity)
+
+            // Auto-create selection if requested
+            when {
+                autoSelectForPart != null -> {
+                    val existingPartSelections = fileSelectionDao.getPartSelections(songId, autoSelectForPart)
+                    val partOrder = (existingPartSelections.maxOfOrNull { it.displayOrder } ?: -1) + 1
+                    fileSelectionDao.insertSelection(
+                        FileSelectionEntity(
+                            id = UUID.randomUUID().toString(),
+                            songFileId = fileId,
+                            selectionType = SelectionType.PART.name,
+                            partId = autoSelectForPart,
+                            displayOrder = partOrder
+                        )
+                    )
+                }
+                autoSelectForMember != null -> {
+                    val existingMemberSelections = fileSelectionDao.getMemberSelections(songId, autoSelectForMember)
+                    val memberOrder = (existingMemberSelections.maxOfOrNull { it.displayOrder } ?: -1) + 1
+                    fileSelectionDao.insertSelection(
+                        FileSelectionEntity(
+                            id = UUID.randomUUID().toString(),
+                            songFileId = fileId,
+                            selectionType = SelectionType.MEMBER.name,
+                            memberId = autoSelectForMember,
+                            displayOrder = memberOrder
+                        )
+                    )
+                }
+            }
+
+            Result.success(fileEntity.toDomain())
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
-    
+
     suspend fun removeFileFromSong(songFile: SongFile, cleanupAnnotations: Boolean = true): Result<Unit> {
         return try {
             val deleteResult = fileManager.deleteFile(songFile.filePath)
@@ -222,23 +245,22 @@ class SongRepository(
                 return Result.failure(deleteResult.exceptionOrNull() ?: Exception("Failed to delete file"))
             }
 
-            // Remove from database
+            // Remove all selections for this file first
+            fileSelectionDao.deleteSelectionsForFile(songFile.id)
+
             val entity = SongFileEntity(
                 id = songFile.id,
                 songId = songFile.songId,
-                memberId = songFile.memberId,
+                uploadedBy = songFile.uploadedBy,
                 filePath = songFile.filePath,
                 fileType = songFile.fileType.name,
                 fileName = songFile.fileName,
-                createdAt = songFile.createdAt,
-                displayOrder = songFile.displayOrder
+                displayOrder = songFile.displayOrder,
+                createdAt = songFile.createdAt
             )
-            
             songDao.deleteSongFile(entity)
 
-            // If this was an annotation file, also clean up associated annotations (only if requested)
             if (songFile.fileType == FileType.ANNOTATION && cleanupAnnotations) {
-                // Format: annotations_{originalFileId}_{memberId}_{timestamp}.json
                 val originalFileId = extractOriginalFileIdFromAnnotationFilename(songFile.fileName)
                 if (originalFileId != null) {
                     annotationRepository.clearAnnotationsForFile(originalFileId)
@@ -250,64 +272,81 @@ class SongRepository(
             Result.failure(e)
         }
     }
-    
-    private fun extractOriginalFileIdFromAnnotationFilename(filename: String): String? {
-        // Format: annotations_{originalFileId}_{memberId}_{timestamp}.json
-        return try {
-            val parts = filename.split("_")
-            if (parts.size >= 3 && parts[0] == "annotations") {
-                parts[1] // The originalFileId is the second part
-            } else {
-                null
+
+    /** Returns files visible to a member, filtered by their selections. */
+    suspend fun getFilesForMember(songId: String, memberId: String, partIds: List<String>): List<SongFile> {
+        val allFiles = songDao.getFilesBySongId(songId).associateBy { it.id }
+        val allSelections = fileSelectionDao.getSelectionsBySongIdOnce(songId)
+
+        val partSelections = allSelections
+            .filter { it.selectionType == SelectionType.PART.name && it.partId in partIds }
+            .sortedBy { it.displayOrder }
+
+        val memberSelections = allSelections
+            .filter { it.selectionType == SelectionType.MEMBER.name && it.memberId == memberId }
+            .sortedBy { it.displayOrder }
+
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<SongFile>()
+        (partSelections + memberSelections).forEach { sel ->
+            if (seen.add(sel.songFileId)) {
+                allFiles[sel.songFileId]?.let { result.add(it.toDomain()) }
             }
-        } catch (e: Exception) {
-            null
         }
+        return result
     }
 
-    // File reordering - similar to setlist reordering
     suspend fun moveFile(songId: String, memberId: String, fileId: String, newPosition: Int): Result<Unit> {
         return try {
-            val files = songDao.getFilesBySongAndMember(songId, memberId)
+            // Reorder member selections for this member
+            val selections = fileSelectionDao.getMemberSelections(songId, memberId)
                 .sortedBy { it.displayOrder }
                 .toMutableList()
 
-            val fileIndex = files.indexOfFirst { it.id == fileId }
-            if (fileIndex == -1) {
-                return Result.failure(Exception("File not found"))
+            val selIndex = selections.indexOfFirst { it.songFileId == fileId }
+            if (selIndex == -1) {
+                // Fallback: try to reorder in the file pool directly
+                val files = songDao.getFilesBySongId(songId).sortedBy { it.displayOrder }.toMutableList()
+                val fileIndex = files.indexOfFirst { it.id == fileId }
+                if (fileIndex == -1) return Result.failure(Exception("File not found"))
+                val file = files.removeAt(fileIndex)
+                files.add(newPosition, file)
+                songDao.reorderFiles(files.mapIndexed { i, f -> f.copy(displayOrder = i) })
+                return Result.success(Unit)
             }
 
-            // Remove and re-insert at new position
-            val file = files.removeAt(fileIndex)
-            files.add(newPosition, file)
-
-            // Update all positions
-            val updatedFiles = files.mapIndexed { index, fileEntity ->
-                fileEntity.copy(displayOrder = index)
+            val sel = selections.removeAt(selIndex)
+            selections.add(newPosition, sel)
+            selections.forEachIndexed { i, s ->
+                fileSelectionDao.updateSelectionOrder(s.id, i)
             }
-
-            songDao.reorderFiles(updatedFiles)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
+    private fun extractOriginalFileIdFromAnnotationFilename(filename: String): String? {
+        return try {
+            val parts = filename.split("_")
+            if (parts.size >= 3 && parts[0] == "annotations") parts[1] else null
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
 
-// Extension functions
-private fun SongEntity.toDomainModel(files: List<SongFile>): Song {
+private fun SongEntity.toDomain(files: List<SongFile>): Song {
     val gson = Gson()
     val tagsList: List<String> = try {
-        if (tags.isNullOrEmpty()) {
-            emptyList()
-        } else {
+        if (tags.isNullOrEmpty()) emptyList()
+        else {
             val type = object : TypeToken<List<String>>() {}.type
             gson.fromJson(tags, type) ?: emptyList()
         }
     } catch (e: Exception) {
         emptyList()
     }
-    
     return Song(
         id = id,
         groupId = groupId,
@@ -323,15 +362,13 @@ private fun SongEntity.toDomainModel(files: List<SongFile>): Song {
     )
 }
 
-private fun SongFileEntity.toDomainModel(): SongFile {
-    return SongFile(
-        id = id,
-        songId = songId,
-        memberId = memberId,
-        filePath = filePath,
-        fileType = FileType.valueOf(fileType),
-        fileName = fileName,
-        createdAt = createdAt,
-        displayOrder = displayOrder
-    )
-}
+private fun SongFileEntity.toDomain() = SongFile(
+    id = id,
+    songId = songId,
+    uploadedBy = uploadedBy,
+    filePath = filePath,
+    fileType = FileType.valueOf(fileType),
+    fileName = fileName,
+    displayOrder = displayOrder,
+    createdAt = createdAt
+)

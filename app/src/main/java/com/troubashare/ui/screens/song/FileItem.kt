@@ -38,17 +38,17 @@ fun FileItem(
     val context = LocalContext.current
     val preferencesManager = remember { AnnotationPreferencesManager(context) }
     var showAnnotationsInConcert by remember {
-        mutableStateOf(preferencesManager.getAnnotationLayerVisibility(file.id, file.memberId))
+        mutableStateOf(preferencesManager.getAnnotationLayerVisibility(file.id, file.uploadedBy))
     }
 
     // Scroll mode state (for PDFs in concert mode)
     var useScrollMode by remember {
-        mutableStateOf(preferencesManager.getScrollMode(file.id, file.memberId))
+        mutableStateOf(preferencesManager.getScrollMode(file.id, file.uploadedBy))
     }
 
     // Layer name state
     var layerName by remember {
-        mutableStateOf(preferencesManager.getAnnotationLayerName(file.id, file.memberId) ?: file.fileName)
+        mutableStateOf(preferencesManager.getAnnotationLayerName(file.id, file.uploadedBy) ?: file.fileName)
     }
     // Check if this file has associated annotation layers - match by file ID only
     val fileAnnotationFiles = allFiles.filter { annotationFile ->
@@ -255,7 +255,7 @@ fun FileItem(
                 TextButton(
                     onClick = {
                         val finalName = nameInput.trim().ifEmpty { file.fileName }
-                        preferencesManager.setAnnotationLayerName(file.id, file.memberId, finalName.takeIf { it != file.fileName })
+                        preferencesManager.setAnnotationLayerName(file.id, file.uploadedBy, finalName.takeIf { it != file.fileName })
                         layerName = finalName
                         showNameDialog = false
                     }
@@ -279,7 +279,7 @@ fun FileItem(
                 .fromApplication(context.applicationContext, com.troubashare.di.RepositoryEntryPoint::class.java)
                 .annotationRepository()
         }
-        val annotations by annotationRepository.getAnnotationsByFileAndMember(file.id, file.memberId)
+        val annotations by annotationRepository.getAnnotationsByFileAndMember(file.id, file.uploadedBy)
             .collectAsState(initial = emptyList())
 
         // Calculate total stroke count
@@ -396,7 +396,7 @@ fun FileItem(
                                     val finalName = newName.trim().ifEmpty { file.fileName }
                                     preferencesManager.setAnnotationLayerName(
                                         file.id,
-                                        file.memberId,
+                                        file.uploadedBy,
                                         finalName.takeIf { it != file.fileName }
                                     )
                                 },
@@ -483,7 +483,7 @@ fun FileItem(
                                     checked = showAnnotationsInConcert,
                                     onCheckedChange = {
                                         showAnnotationsInConcert = it
-                                        preferencesManager.setAnnotationLayerVisibility(file.id, file.memberId, it)
+                                        preferencesManager.setAnnotationLayerVisibility(file.id, file.uploadedBy, it)
                                     },
                                     modifier = Modifier.scale(0.8f)
                                 )
@@ -508,7 +508,7 @@ fun FileItem(
                                             selected = !useScrollMode,
                                             onClick = {
                                                 useScrollMode = false
-                                                preferencesManager.setScrollMode(file.id, file.memberId, false)
+                                                preferencesManager.setScrollMode(file.id, file.uploadedBy, false)
                                             },
                                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                                         ) {
@@ -518,7 +518,7 @@ fun FileItem(
                                             selected = useScrollMode,
                                             onClick = {
                                                 useScrollMode = true
-                                                preferencesManager.setScrollMode(file.id, file.memberId, true)
+                                                preferencesManager.setScrollMode(file.id, file.uploadedBy, true)
                                             },
                                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                                         ) {

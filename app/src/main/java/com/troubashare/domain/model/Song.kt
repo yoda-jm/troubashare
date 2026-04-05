@@ -14,15 +14,16 @@ data class Song(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
+/** A file in the song's pool — belongs to the song, not to any member. */
 data class SongFile(
     val id: String,
     val songId: String,
-    val memberId: String,
+    val uploadedBy: String,  // Member.id — audit only, not access control
     val filePath: String,
     val fileType: FileType,
     val fileName: String,
-    val createdAt: Long = System.currentTimeMillis(),
-    val displayOrder: Int = 0 // Order for display in lists and concert mode
+    val displayOrder: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 enum class FileType(val extension: String) {
@@ -30,3 +31,18 @@ enum class FileType(val extension: String) {
     IMAGE("jpg"),
     ANNOTATION("json")
 }
+
+enum class SelectionType {
+    MEMBER,  // File selected by a specific member (Band mode, or personal in Ensemble)
+    PART     // File selected for an entire Part (Ensemble mode)
+}
+
+/** Links a Member or Part to the files they use for a song. */
+data class FileSelection(
+    val id: String,
+    val songFileId: String,
+    val selectionType: SelectionType,
+    val memberId: String? = null,  // set when selectionType = MEMBER
+    val partId: String? = null,    // set when selectionType = PART
+    val displayOrder: Int = 0
+)

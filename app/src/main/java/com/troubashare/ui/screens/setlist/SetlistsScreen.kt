@@ -10,19 +10,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.R
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.file.FileManager
-import com.troubashare.data.repository.GroupRepository
-import com.troubashare.data.repository.SongRepository
-import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.domain.model.Setlist
-import kotlinx.coroutines.flow.flow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,26 +26,13 @@ fun SetlistsScreen(
     onEditSetlist: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val fileManager = remember { FileManager(context) }
-    val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
-    val groupRepository = remember { GroupRepository(database) }
-    val setlistRepository = remember { SetlistRepository(database, songRepository) }
-    val viewModel: SetlistsViewModel = viewModel { 
-        SetlistsViewModel(setlistRepository, groupRepository, groupId) 
-    }
+    val viewModel: SetlistsViewModel = hiltViewModel()
     
     val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val createSetlistState by viewModel.createSetlistState.collectAsState()
     val setlists by viewModel.setlists.collectAsState()
-    
-    // Get current group for display
-    val currentGroup by remember {
-        flow { emit(groupRepository.getGroupById(groupId)) }
-    }.collectAsState(initial = null)
+    val currentGroup by viewModel.currentGroup.collectAsState()
 
     Scaffold(
         topBar = {

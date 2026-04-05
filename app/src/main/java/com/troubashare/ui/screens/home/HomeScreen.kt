@@ -14,13 +14,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.R
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.repository.GroupRepository
-import com.troubashare.data.repository.SetlistRepository
-import com.troubashare.data.repository.SongRepository
-import com.troubashare.data.file.FileManager
 import com.troubashare.domain.model.Group
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,10 +30,7 @@ fun HomeScreen(
     onCreateNewGroup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val repository = remember { GroupRepository(database) }
-    val viewModel: HomeViewModel = viewModel { HomeViewModel(repository, groupId) }
+    val viewModel: HomeViewModel = hiltViewModel()
     
     val uiState by viewModel.uiState.collectAsState()
     val currentGroup by viewModel.currentGroup.collectAsState()
@@ -189,8 +181,11 @@ fun HomeScreen(
     
     // Concert Mode setup dialog
     if (uiState.showConcertModeDialog) {
+        val concertSetlists by viewModel.concertSetlists.collectAsState()
+        val concertMembers by viewModel.concertMembers.collectAsState()
         ConcertModeSetupDialog(
-            groupId = groupId,
+            setlists = concertSetlists,
+            members = concertMembers,
             onSetlistAndMemberSelected = { setlistId, memberId ->
                 onNavigateToConcertMode(setlistId, memberId)
                 viewModel.hideConcertModeDialog()
@@ -489,38 +484,14 @@ fun EditGroupDialog(
 
 @Composable
 fun ConcertModeSetupDialog(
-    groupId: String,
+    setlists: List<com.troubashare.domain.model.Setlist>,
+    members: List<com.troubashare.domain.model.Member>,
     onSetlistAndMemberSelected: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedSetlistId by remember { mutableStateOf("") }
     var selectedMemberId by remember { mutableStateOf("") }
-    
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val fileManager = remember { FileManager(context) }
-    val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
-    val setlistRepository = remember { SetlistRepository(database, songRepository) }
-    val groupRepository = remember { GroupRepository(database) }
-    
-    var setlists by remember { mutableStateOf<List<com.troubashare.domain.model.Setlist>>(emptyList()) }
-    var members by remember { mutableStateOf<List<com.troubashare.domain.model.Member>>(emptyList()) }
-    
-    LaunchedEffect(groupId) {
-        // Load setlists for the group
-        setlistRepository.getSetlistsByGroupId(groupId).collect { setlistList ->
-            setlists = setlistList
-        }
-    }
-    
-    LaunchedEffect(groupId) {
-        // Load members for the group
-        groupRepository.getMembersByGroupId(groupId).collect { memberList ->
-            members = memberList
-        }
-    }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Start Concert Mode") },

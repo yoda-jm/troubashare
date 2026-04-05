@@ -36,15 +36,10 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.repository.SetlistRepository
-import com.troubashare.data.repository.SongRepository
-import com.troubashare.data.repository.GroupRepository
-import com.troubashare.data.file.FileManager
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import java.io.File
@@ -146,16 +141,7 @@ fun ConcertModeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val fileManager = remember { FileManager(context) }
-    val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
-    val setlistRepository = remember { SetlistRepository(database, songRepository) }
-    val groupRepository = remember { GroupRepository(database) }
-    
-    val viewModel: ConcertModeViewModel = viewModel { 
-        ConcertModeViewModel(setlistRepository, songRepository, groupRepository) 
-    }
+    val viewModel: ConcertModeViewModel = hiltViewModel()
     
     LaunchedEffect(setlistId, memberId) {
         viewModel.loadConcertData(setlistId, memberId)
@@ -362,7 +348,7 @@ fun ConcertModeScreen(
 
                             // Load annotations for this file
                             val annotations by remember(file.id, memberId) {
-                                annotationRepository.getAnnotationsByFileAndMember(file.id, memberId)
+                                viewModel.getAnnotationsForFile(file.id, memberId)
                             }.collectAsState(initial = emptyList())
 
                             Box(

@@ -6,16 +6,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.ui.components.AnnotatableFileViewer
 import com.troubashare.domain.model.SongFile
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.repository.AnnotationRepository
-import com.troubashare.data.repository.SongRepository
-import com.troubashare.data.file.FileManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,29 +21,7 @@ fun FileViewerScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Use the file's member ID - this represents the member who owns this specific file
-    // For annotation purposes, we should use the file owner's member ID
-    val currentMemberId = songFile.memberId.ifBlank {
-        "unknown-member"
-    }
-    
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val fileManager = remember { FileManager(context) }
-    val annotationRepository = remember { AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
-    
-    val viewModel: FileViewerViewModel = viewModel {
-        FileViewerViewModel(
-            annotationRepository = annotationRepository,
-            songRepository = songRepository,
-            fileId = songFile.id,
-            memberId = currentMemberId,
-            songId = songFile.songId,
-            filePath = songFile.filePath,
-            context = context
-        ) 
-    }
+    val viewModel: FileViewerViewModel = hiltViewModel()
     
     val uiState by viewModel.uiState.collectAsState()
     val drawingState by viewModel.drawingState.collectAsState()

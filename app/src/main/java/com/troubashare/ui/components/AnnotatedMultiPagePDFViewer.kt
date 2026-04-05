@@ -365,26 +365,6 @@ private fun AnnotationOverlayForPage(
     }
 }
 
-private fun createPathFromPoints(points: List<AnnotationPoint>): Path {
-    val path = Path()
-    try {
-        if (points.isNotEmpty()) {
-            val firstPoint = points.first()
-            if (firstPoint.x.isFinite() && firstPoint.y.isFinite()) {
-                path.moveTo(firstPoint.x, firstPoint.y)
-                points.drop(1).forEach { point ->
-                    if (point.x.isFinite() && point.y.isFinite()) {
-                        path.lineTo(point.x, point.y)
-                    }
-                }
-            }
-        }
-    } catch (e: Exception) {
-        return Path()
-    }
-    return path
-}
-
 /**
  * Single-page PDF viewer with annotations for concert mode.
  * Shows only the specified page from a PDF.

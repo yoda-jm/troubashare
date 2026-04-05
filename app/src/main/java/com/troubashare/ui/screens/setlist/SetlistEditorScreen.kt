@@ -10,14 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.repository.SetlistRepository
-import com.troubashare.data.repository.SongRepository
-import com.troubashare.data.file.FileManager
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.domain.model.Song
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,15 +22,7 @@ fun SetlistEditorScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val fileManager = remember { FileManager(context) }
-    val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
-    val setlistRepository = remember { SetlistRepository(database, songRepository) }
-    val viewModel: SetlistEditorViewModel = viewModel { 
-        SetlistEditorViewModel(setlistRepository, songRepository, setlistId) 
-    }
+    val viewModel: SetlistEditorViewModel = hiltViewModel()
     
     val uiState by viewModel.uiState.collectAsState()
     val setlist by viewModel.setlist.collectAsState()

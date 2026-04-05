@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -68,8 +69,8 @@ fun AnnotatablePDFViewer(
     viewModel: FileViewerViewModel,
     modifier: Modifier = Modifier
 ) {
-    var currentPage by remember { mutableIntStateOf(0) }
-    var pageCount by remember { mutableIntStateOf(0) }
+    var currentPage by rememberSaveable { mutableIntStateOf(0) }
+    var pageCount by rememberSaveable { mutableIntStateOf(0) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -153,14 +154,12 @@ fun AnnotatablePDFViewer(
                         modifier = Modifier.fillMaxHeight(),
                         annotations = annotations,
                         onDeleteStroke = viewModel::deleteStroke,
-                        onSaveAnnotations = {
-                            // TODO: Implement save logic with file picker
-                        },
+                        onSaveAnnotations = null,
                         onStrokeUpdated = viewModel::updateStroke
                     )
                 }
             }
-            
+
             // PDF content with navigation controls in landscape
             Column(
                 modifier = Modifier
@@ -264,9 +263,7 @@ fun AnnotatablePDFViewer(
                     isVertical = false,
                     annotations = annotations,
                     onDeleteStroke = viewModel::deleteStroke,
-                    onSaveAnnotations = {
-                        // TODO: Implement save logic with file picker
-                    },
+                    onSaveAnnotations = null,
                     onStrokeUpdated = viewModel::updateStroke
                 )
             }
@@ -303,22 +300,6 @@ fun AnnotatablePDFViewer(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Save annotation layer FAB (when in drawing mode - always show to enable saving)
-                    if (drawingState.isDrawing) {
-                        FloatingActionButton(
-                            onClick = {
-                                viewModel.saveAnnotationLayer()
-                            },
-                            containerColor = MaterialTheme.colorScheme.tertiary,
-                            contentColor = MaterialTheme.colorScheme.onTertiary
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Save,
-                                contentDescription = "Save Annotation Layer"
-                            )
-                        }
-                    }
-                    
                     // Expandable tools FAB (only when in drawing mode)
                     if (drawingState.isDrawing) {
                         ExpandableToolsFab(
@@ -518,22 +499,6 @@ fun PDFContent(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Save annotation layer FAB (when in drawing mode - always show to enable saving)
-                        if (drawingState.isDrawing) {
-                            FloatingActionButton(
-                                onClick = {
-                                    viewModel.saveAnnotationLayer()
-                                },
-                                containerColor = MaterialTheme.colorScheme.tertiary,
-                                contentColor = MaterialTheme.colorScheme.onTertiary
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Save,
-                                    contentDescription = "Save Annotation Layer"
-                                )
-                            }
-                        }
-                        
                         // Expandable tools FAB (only when in drawing mode)
                         if (drawingState.isDrawing) {
                             ExpandableToolsFab(
@@ -731,28 +696,6 @@ fun AnnotationOverlay(
     }
 }
 
-private fun createPathFromPoints(points: List<com.troubashare.domain.model.AnnotationPoint>): androidx.compose.ui.graphics.Path {
-    val path = androidx.compose.ui.graphics.Path()
-    try {
-        if (points.isNotEmpty()) {
-            val firstPoint = points.first()
-            // Check for valid coordinates
-            if (firstPoint.x.isFinite() && firstPoint.y.isFinite()) {
-                path.moveTo(firstPoint.x, firstPoint.y)
-                points.drop(1).forEach { point ->
-                    if (point.x.isFinite() && point.y.isFinite()) {
-                        path.lineTo(point.x, point.y)
-                    }
-                }
-            }
-        }
-    } catch (e: Exception) {
-        // Return empty path if there's an issue
-        return androidx.compose.ui.graphics.Path()
-    }
-    return path
-}
-
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun AnnotatableImageViewer(
@@ -792,7 +735,7 @@ fun AnnotatableImageViewer(
                         modifier = Modifier.fillMaxHeight(),
                         annotations = annotations,
                         onDeleteStroke = viewModel::deleteStroke,
-                        onSaveAnnotations = {},
+                        onSaveAnnotations = null,
                         onStrokeUpdated = viewModel::updateStroke
                     )
                 }
@@ -826,7 +769,7 @@ fun AnnotatableImageViewer(
                     isVertical = false,
                     annotations = annotations,
                     onDeleteStroke = viewModel::deleteStroke,
-                    onSaveAnnotations = {},
+                    onSaveAnnotations = null,
                     onStrokeUpdated = viewModel::updateStroke
                 )
             }
@@ -1011,22 +954,6 @@ private fun ImageContent(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Save annotation layer FAB (when in drawing mode)
-                if (drawingState.isDrawing) {
-                    FloatingActionButton(
-                        onClick = {
-                            viewModel.saveAnnotationLayer()
-                        },
-                        containerColor = MaterialTheme.colorScheme.tertiary,
-                        contentColor = MaterialTheme.colorScheme.onTertiary
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Save,
-                            contentDescription = "Save Annotation Layer"
-                        )
-                    }
-                }
-
                 // Expandable tools FAB (only when in drawing mode)
                 if (drawingState.isDrawing) {
                     ExpandableToolsFab(

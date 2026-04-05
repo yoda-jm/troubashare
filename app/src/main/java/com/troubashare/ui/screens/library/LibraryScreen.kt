@@ -20,11 +20,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.flow
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.R
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.repository.SongRepository
 import com.troubashare.domain.model.Song
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,24 +32,14 @@ fun LibraryScreen(
     onSongClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val fileManager = remember { com.troubashare.data.file.FileManager(context) }
-    val annotationRepository = remember { com.troubashare.data.repository.AnnotationRepository(database) }
-    val songRepository = remember { SongRepository(database, fileManager, annotationRepository) }
-    val groupRepository = remember { com.troubashare.data.repository.GroupRepository(database) }
-    val viewModel: LibraryViewModel = viewModel { LibraryViewModel(songRepository, groupId) }
+    val viewModel: LibraryViewModel = hiltViewModel()
     
     val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val createSongState by viewModel.createSongState.collectAsState()
     val editSongState by viewModel.editSongState.collectAsState()
     val songs by viewModel.songs.collectAsState()
-    
-    // Get current group for display
-    val currentGroup by remember {
-        flow { emit(groupRepository.getGroupById(groupId)) }
-    }.collectAsState(initial = null)
+    val currentGroup by viewModel.currentGroup.collectAsState()
 
     Scaffold(
         topBar = {

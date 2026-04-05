@@ -1,20 +1,25 @@
 package com.troubashare.ui.screens.setlist
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.domain.model.Setlist
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class SetlistEditorViewModel(
+@HiltViewModel
+class SetlistEditorViewModel @Inject constructor(
     private val setlistRepository: SetlistRepository,
     private val songRepository: SongRepository,
-    private val setlistId: String
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val setlistId: String = savedStateHandle["setlistId"] ?: ""
 
     private val _uiState = MutableStateFlow(SetlistEditorUiState())
     val uiState: StateFlow<SetlistEditorUiState> = _uiState.asStateFlow()

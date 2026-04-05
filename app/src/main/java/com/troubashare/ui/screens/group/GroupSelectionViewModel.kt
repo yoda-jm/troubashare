@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.domain.model.Group
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class GroupSelectionViewModel(
+@HiltViewModel
+class GroupSelectionViewModel @Inject constructor(
     private val groupRepository: GroupRepository
 ) : ViewModel() {
 

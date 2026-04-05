@@ -1,16 +1,31 @@
 package com.troubashare.ui.screens.home
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.GroupRepository
+import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.domain.model.Group
+import com.troubashare.domain.model.Member
+import com.troubashare.domain.model.Setlist
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class HomeViewModel(
+@HiltViewModel
+class HomeViewModel @Inject constructor(
     private val groupRepository: GroupRepository,
-    private val groupId: String
+    private val setlistRepository: SetlistRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val groupId: String = savedStateHandle["groupId"] ?: ""
+
+    val concertSetlists: StateFlow<List<Setlist>> = setlistRepository.getSetlistsByGroupId(groupId)
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = emptyList())
+
+    val concertMembers: StateFlow<List<Member>> = groupRepository.getMembersByGroupId(groupId)
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = emptyList())
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()

@@ -2,18 +2,27 @@ package com.troubashare.ui.screens.concert
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.repository.AnnotationRepository
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.repository.GroupRepository
+import com.troubashare.domain.model.Annotation
 import com.troubashare.domain.model.SongFile
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class ConcertModeViewModel(
+@HiltViewModel
+class ConcertModeViewModel @Inject constructor(
     private val setlistRepository: SetlistRepository,
     private val songRepository: SongRepository,
-    private val groupRepository: GroupRepository
+    private val groupRepository: GroupRepository,
+    private val annotationRepository: AnnotationRepository
 ) : ViewModel() {
+
+    fun getAnnotationsForFile(fileId: String, memberId: String): Flow<List<Annotation>> =
+        annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
     
     private val _uiState = MutableStateFlow(ConcertModeUiState())
     val uiState: StateFlow<ConcertModeUiState> = _uiState.asStateFlow()

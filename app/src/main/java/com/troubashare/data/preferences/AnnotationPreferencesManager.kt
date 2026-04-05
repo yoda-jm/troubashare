@@ -82,6 +82,20 @@ class AnnotationPreferencesManager(context: Context) {
         return preferences[key]?.useScrollMode ?: false // Default to page/swipe mode
     }
 
+    // --- Drawing style (global, persisted across sessions) ---
+
+    fun saveDrawingStyle(colorArgb: Int, strokeWidth: Float, opacity: Float) {
+        prefs.edit {
+            putInt("drawing_color", colorArgb)
+            putFloat("drawing_stroke_width", strokeWidth)
+            putFloat("drawing_opacity", opacity)
+        }
+    }
+
+    fun getDrawingColor(): Int = prefs.getInt("drawing_color", android.graphics.Color.BLACK)
+    fun getDrawingStrokeWidth(): Float = prefs.getFloat("drawing_stroke_width", 5f)
+    fun getDrawingOpacity(): Float = prefs.getFloat("drawing_opacity", 1f)
+
     private fun getAnnotationLayerPreferences(): MutableMap<String, AnnotationLayerPreferences> {
         val json = prefs.getString("layer_preferences", null) ?: return mutableMapOf()
         return try {

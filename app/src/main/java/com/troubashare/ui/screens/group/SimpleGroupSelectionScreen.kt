@@ -12,13 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.R
-import com.troubashare.data.database.TroubaShareDatabase
-import com.troubashare.data.repository.GroupRepository
 import com.troubashare.domain.model.Group
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,10 +23,7 @@ import com.troubashare.domain.model.Group
 fun SimpleGroupSelectionScreen(
     onGroupSelected: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val database = remember { TroubaShareDatabase.getInstance(context) }
-    val repository = remember { GroupRepository(database) }
-    val viewModel: GroupSelectionViewModel = viewModel { GroupSelectionViewModel(repository) }
+    val viewModel: GroupSelectionViewModel = hiltViewModel()
     
     val uiState by viewModel.uiState.collectAsState()
     val createGroupState by viewModel.createGroupState.collectAsState()

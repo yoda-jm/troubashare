@@ -1,18 +1,30 @@
 package com.troubashare.ui.screens.library
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SongRepository
+import com.troubashare.domain.model.Group
 import com.troubashare.domain.model.Song
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class LibraryViewModel(
+@HiltViewModel
+class LibraryViewModel @Inject constructor(
     private val songRepository: SongRepository,
-    private val groupId: String
+    private val groupRepository: GroupRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val groupId: String = savedStateHandle["groupId"] ?: ""
+
+    val currentGroup: StateFlow<Group?> = flow {
+        emit(groupRepository.getGroupById(groupId))
+    }.stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()

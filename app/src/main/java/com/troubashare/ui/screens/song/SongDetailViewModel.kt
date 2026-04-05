@@ -2,33 +2,38 @@ package com.troubashare.ui.screens.song
 
 import android.content.Context
 import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.repository.AnnotationRepository
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SongRepository
+import com.troubashare.domain.model.Annotation
 import com.troubashare.domain.model.Group
 import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.SongFile
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class SongDetailViewModel(
+@HiltViewModel
+class SongDetailViewModel @Inject constructor(
     private val songRepository: SongRepository,
     private val groupRepository: GroupRepository,
-    private val songId: String,
-    private val groupId: String
+    private val annotationRepository: AnnotationRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+
+    fun getAnnotationsForFile(fileId: String, memberId: String): Flow<List<Annotation>> =
+        annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
+    private val songId: String = savedStateHandle["songId"] ?: ""
+    private val groupId: String = savedStateHandle["groupId"] ?: ""
 
     private val _uiState = MutableStateFlow(SongDetailUiState())
     val uiState: StateFlow<SongDetailUiState> = _uiState.asStateFlow()
 
     val song: StateFlow<Song?> = songRepository.getSongByIdFlow(songId)
-        .onEach { song ->
-            println("DEBUG SongDetailViewModel: Received song update - ${song?.title}, files count: ${song?.files?.size}")
-            song?.files?.forEachIndexed { index, file ->
-                println("DEBUG SongDetailViewModel: File $index - id='${file.id}', songId='${file.songId}', fileName='${file.fileName}'")
-            }
-        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -57,7 +62,6 @@ class SongDetailViewModel(
                     return@launch
                 }
                 
-                println("DEBUG SongDetailViewModel: Uploading file '$fileName' for songId='$songId', memberId='$memberId'")
                 val result = songRepository.addFileToSong(
                     songId = songId,
                     memberId = memberId,
@@ -68,12 +72,9 @@ class SongDetailViewModel(
                 inputStream.close()
                 
                 if (result.isSuccess) {
-                    val createdFile = result.getOrNull()
-                    println("DEBUG SongDetailViewModel: File upload SUCCESS - fileId='${createdFile?.id}', songId='${createdFile?.songId}', fileName='${createdFile?.fileName}'")
                     _uiState.value = _uiState.value.copy(isUploading = false)
                     // Song data will automatically refresh through reactive Flow
                 } else {
-                    println("DEBUG SongDetailViewModel: File upload FAILED - ${result.exceptionOrNull()?.message}")
                     _uiState.value = _uiState.value.copy(
                         isUploading = false,
                         errorMessage = result.exceptionOrNull()?.message ?: "Failed to upload file"

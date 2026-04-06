@@ -64,6 +64,9 @@ interface FileSelectionDao {
     @Query("DELETE FROM file_selections WHERE songFileId = :songFileId")
     suspend fun deleteSelectionsForFile(songFileId: String)
 
+    @Query("DELETE FROM file_selections WHERE songFileId = :songFileId AND memberId = :memberId AND selectionType = 'MEMBER'")
+    suspend fun deleteMemberSelection(songFileId: String, memberId: String)
+
     @Query("UPDATE file_selections SET displayOrder = :newOrder WHERE id = :selectionId")
     suspend fun updateSelectionOrder(selectionId: String, newOrder: Int)
 }

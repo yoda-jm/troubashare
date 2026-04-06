@@ -6,17 +6,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.troubashare.data.preferences.AnnotationPreferencesManager
 import com.troubashare.domain.model.FileType
+import com.troubashare.domain.model.SHARED_ANNOTATION_LAYER
 import com.troubashare.domain.model.SongFile
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,25 +32,8 @@ fun FileItem(
     onMoveDown: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showNameDialog by remember { mutableStateOf(false) }
     var showPropertiesDialog by remember { mutableStateOf(false) }
-    var nameInput by remember { mutableStateOf("") }
-    // State for annotation visibility in concert mode (per file)
     val context = LocalContext.current
-    val preferencesManager = remember { AnnotationPreferencesManager(context) }
-    var showAnnotationsInConcert by remember {
-        mutableStateOf(preferencesManager.getAnnotationLayerVisibility(file.id, file.uploadedBy))
-    }
-
-    // Scroll mode state (for PDFs in concert mode)
-    var useScrollMode by remember {
-        mutableStateOf(preferencesManager.getScrollMode(file.id, file.uploadedBy))
-    }
-
-    // Layer name state
-    var layerName by remember {
-        mutableStateOf(preferencesManager.getAnnotationLayerName(file.id, file.uploadedBy) ?: file.fileName)
-    }
     // Check if this file has associated annotation layers - match by file ID only
     val fileAnnotationFiles = allFiles.filter { annotationFile ->
         annotationFile.fileType == FileType.ANNOTATION &&
@@ -100,28 +84,12 @@ fun FileItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        // Show custom layer name if available, otherwise show filename
                         Text(
-                            text = if (hasAnnotations && file.fileType != FileType.ANNOTATION) {
-                                layerName
-                            } else {
-                                file.fileName
-                            },
+                            text = file.fileName,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-
-                        // Show original filename if custom name is different
-                        if (hasAnnotations && file.fileType != FileType.ANNOTATION && layerName != file.fileName) {
-                            Text(
-                                text = file.fileName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
                     }
 
                     // Show "annotation layer" label for annotation files
@@ -149,17 +117,15 @@ fun FileItem(
                 )
             }
 
-            // Annotation indicator icon for PDFs and Images
-            if ((file.fileType == FileType.PDF || file.fileType == FileType.IMAGE)
-                && file.fileType != FileType.ANNOTATION) {
+            // Annotation indicator: shown only when the shared layer has strokes
+            if (hasAnnotations
+                && file.fileType != FileType.ANNOTATION
+                && (file.fileType == FileType.PDF || file.fileType == FileType.IMAGE)) {
                 Icon(
-                    imageVector = if (hasAnnotations) Icons.Default.Edit else Icons.Default.EditOff,
-                    contentDescription = if (hasAnnotations) "Has annotations" else "No annotations",
-                    modifier = Modifier.size(20.dp),
-                    tint = if (hasAnnotations)
-                        MaterialTheme.colorScheme.tertiary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    imageVector = Icons.Default.Layers,
+                    contentDescription = "Has group annotations",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.tertiary
                 )
                 Spacer(modifier = Modifier.width(4.dp))
             }
@@ -230,47 +196,6 @@ fun FileItem(
         }
     }
 
-    // Layer naming dialog
-    if (showNameDialog) {
-        AlertDialog(
-            onDismissRequest = { showNameDialog = false },
-            title = { Text("Edit Layer Name") },
-            text = {
-                Column {
-                    Text(
-                        text = "Enter a custom name for this annotation layer:",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = nameInput,
-                        onValueChange = { nameInput = it },
-                        label = { Text("Layer Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val finalName = nameInput.trim().ifEmpty { file.fileName }
-                        preferencesManager.setAnnotationLayerName(file.id, file.uploadedBy, finalName.takeIf { it != file.fileName })
-                        layerName = finalName
-                        showNameDialog = false
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNameDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
     // Properties dialog for PDF and Image files
     if (showPropertiesDialog) {
         // Load annotations and calculate stroke count
@@ -279,7 +204,8 @@ fun FileItem(
                 .fromApplication(context.applicationContext, com.troubashare.di.RepositoryEntryPoint::class.java)
                 .annotationRepository()
         }
-        val annotations by annotationRepository.getAnnotationsByFileAndMember(file.id, file.uploadedBy)
+        // Pool-level view: count strokes on the shared/group layer only
+        val annotations by annotationRepository.getAnnotationsByFileAndMember(file.id, SHARED_ANNOTATION_LAYER)
             .collectAsState(initial = emptyList())
 
         // Calculate total stroke count
@@ -308,6 +234,10 @@ fun FileItem(
 
         // State for showing delete confirmation
         var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+        // Debug state
+        var debugText by remember { mutableStateOf<String?>(null) }
+        var debugLoading by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { showPropertiesDialog = false },
@@ -372,42 +302,6 @@ fun FileItem(
                         }
                     }
 
-                    // Display Settings Section
-                    Text(
-                        text = "Display Settings",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            // Layer name editing
-                            OutlinedTextField(
-                                value = layerName,
-                                onValueChange = { newName ->
-                                    layerName = newName
-                                    val finalName = newName.trim().ifEmpty { file.fileName }
-                                    preferencesManager.setAnnotationLayerName(
-                                        file.id,
-                                        file.uploadedBy,
-                                        finalName.takeIf { it != file.fileName }
-                                    )
-                                },
-                                label = { Text("Display Name") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                supportingText = { Text("Custom name shown in concert mode") }
-                            )
-                        }
-                    }
-
                     // Annotations Section
                     if (hasAnnotations) {
                         Text(
@@ -453,87 +347,61 @@ fun FileItem(
                         }
                     }
 
-                    // Concert Mode Settings Section
+                    // ── DEBUG PANEL ───────────────────────────────────────────
+                    HorizontalDivider()
                     Text(
-                        text = "Concert Mode Settings",
+                        text = "Debug",
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.outline
                     )
-
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            // Show annotations in concert toggle
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Show Annotations",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Switch(
-                                    checked = showAnnotationsInConcert,
-                                    onCheckedChange = {
-                                        showAnnotationsInConcert = it
-                                        preferencesManager.setAnnotationLayerVisibility(file.id, file.uploadedBy, it)
-                                    },
-                                    modifier = Modifier.scale(0.8f)
-                                )
-                            }
-
-                            // Only show view mode for PDFs (images don't have multiple pages)
-                            if (file.fileType == FileType.PDF) {
-                                HorizontalDivider()
-
-                                // View mode selection
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = "View Mode",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    SingleChoiceSegmentedButtonRow(
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        SegmentedButton(
-                                            selected = !useScrollMode,
-                                            onClick = {
-                                                useScrollMode = false
-                                                preferencesManager.setScrollMode(file.id, file.uploadedBy, false)
-                                            },
-                                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                                        ) {
-                                            Text("Swipe")
-                                        }
-                                        SegmentedButton(
-                                            selected = useScrollMode,
-                                            onClick = {
-                                                useScrollMode = true
-                                                preferencesManager.setScrollMode(file.id, file.uploadedBy, true)
-                                            },
-                                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                                        ) {
-                                            Text("Scroll")
-                                        }
+                    Text(
+                        text = "file.id (queried):\n${file.id}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+                    OutlinedButton(
+                        onClick = {
+                            debugLoading = true
+                            debugText = null
+                            coroutineScope.launch {
+                                debugText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    buildString {
+                                        appendLine("=== Annotations for this file ===")
+                                        appendLine(annotationRepository.debugDumpForFile(file.id))
+                                        appendLine()
+                                        appendLine("=== All annotations in DB ===")
+                                        appendLine(annotationRepository.debugDumpAll())
                                     }
-                                    Text(
-                                        text = if (useScrollMode) "Continuous vertical scrolling through all pages" else "Swipe horizontally between pages",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
+                                debugLoading = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (debugLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Dump DB state")
+                    }
+                    debugText?.let { dump ->
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(
+                                    text = dump,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(8.dp)
+                                )
                             }
                         }
                     }
+                    // ── END DEBUG PANEL ───────────────────────────────────────
+
                 }
             },
             confirmButton = {

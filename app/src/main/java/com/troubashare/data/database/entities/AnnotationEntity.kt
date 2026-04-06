@@ -13,13 +13,9 @@ import androidx.room.Index
             parentColumns = ["id"],
             childColumns = ["fileId"],
             onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
-            entity = MemberEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["memberId"],
-            onDelete = ForeignKey.CASCADE
         )
+        // NOTE: memberId is intentionally NOT a foreign key — it may hold synthetic IDs
+        // like "_shared_" for the group annotation layer, which have no corresponding member row.
     ],
     indices = [
         Index(value = ["fileId"]),

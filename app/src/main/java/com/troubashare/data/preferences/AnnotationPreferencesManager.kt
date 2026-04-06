@@ -82,6 +82,32 @@ class AnnotationPreferencesManager(context: Context) {
         return preferences[key]?.useScrollMode ?: false // Default to page/swipe mode
     }
 
+    fun setSharedLayerVisible(fileId: String, viewerMemberId: String, visible: Boolean) {
+        val preferences = getAnnotationLayerPreferences()
+        val key = "${fileId}_${viewerMemberId}"
+        val pref = preferences[key] ?: AnnotationLayerPreferences(fileId, viewerMemberId)
+        preferences[key] = pref.copy(showSharedLayer = visible)
+        saveAnnotationLayerPreferences(preferences)
+    }
+
+    fun getSharedLayerVisible(fileId: String, viewerMemberId: String): Boolean {
+        val preferences = getAnnotationLayerPreferences()
+        return preferences["${fileId}_${viewerMemberId}"]?.showSharedLayer ?: true
+    }
+
+    fun setActiveLayerIsShared(fileId: String, viewerMemberId: String, isShared: Boolean) {
+        val preferences = getAnnotationLayerPreferences()
+        val key = "${fileId}_${viewerMemberId}"
+        val pref = preferences[key] ?: AnnotationLayerPreferences(fileId, viewerMemberId)
+        preferences[key] = pref.copy(activeLayerIsShared = isShared)
+        saveAnnotationLayerPreferences(preferences)
+    }
+
+    fun getActiveLayerIsShared(fileId: String, viewerMemberId: String): Boolean {
+        val preferences = getAnnotationLayerPreferences()
+        return preferences["${fileId}_${viewerMemberId}"]?.activeLayerIsShared ?: false
+    }
+
     // --- Drawing style (global, persisted across sessions) ---
 
     fun saveDrawingStyle(colorArgb: Int, strokeWidth: Float, opacity: Float) {

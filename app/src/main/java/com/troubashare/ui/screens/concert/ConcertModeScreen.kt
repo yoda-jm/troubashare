@@ -346,10 +346,27 @@ fun ConcertModeScreen(
                             val page = concertPages[pageIndex]
                             val file = page.file
 
-                            // Load annotations for this file
-                            val annotations by remember(file.id, memberId) {
+                            // Load annotations for this file — personal + shared layers,
+                            // respecting the visibility prefs the member set in song editing.
+                            val prefsForFile = remember(file.id, memberId) {
+                                com.troubashare.data.preferences.AnnotationPreferencesManager(context)
+                            }
+                            val showPersonal = remember(file.id, memberId) {
+                                prefsForFile.getAnnotationLayerVisibility(file.id, memberId)
+                            }
+                            val showShared = remember(file.id, memberId) {
+                                prefsForFile.getSharedLayerVisible(file.id, memberId)
+                            }
+                            val personalAnnotations by remember(file.id, memberId) {
                                 viewModel.getAnnotationsForFile(file.id, memberId)
                             }.collectAsState(initial = emptyList())
+                            val sharedAnnotations by remember(file.id) {
+                                viewModel.getSharedAnnotationsForFile(file.id)
+                            }.collectAsState(initial = emptyList())
+                            val annotations = remember(personalAnnotations, sharedAnnotations, showPersonal, showShared) {
+                                (if (showPersonal) personalAnnotations else emptyList()) +
+                                (if (showShared) sharedAnnotations else emptyList())
+                            }
 
                             Box(
                                 modifier = Modifier.fillMaxSize(),

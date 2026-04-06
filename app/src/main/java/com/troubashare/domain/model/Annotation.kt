@@ -4,6 +4,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
+/** Synthetic memberId used for the shared/group annotation layer. */
+const val SHARED_ANNOTATION_LAYER = "_shared_"
+
 enum class AnnotationScope {
     PERSONAL,  // Only visible to the author (default)
     PART,      // Visible to all members of the author's Part (Ensemble mode only)

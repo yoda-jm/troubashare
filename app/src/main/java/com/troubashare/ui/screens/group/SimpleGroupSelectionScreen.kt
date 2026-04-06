@@ -203,7 +203,7 @@ fun CreateGroupDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {},
         title = { Text(stringResource(R.string.create_group)) },
         text = {
             Column {
@@ -335,7 +335,7 @@ fun EditGroupDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {},
         title = { Text(stringResource(R.string.edit_group)) },
         text = {
             Column {

@@ -240,10 +240,8 @@ class SongRepository(
 
     suspend fun removeFileFromSong(songFile: SongFile, cleanupAnnotations: Boolean = true): Result<Unit> {
         return try {
-            val deleteResult = fileManager.deleteFile(songFile.filePath)
-            if (deleteResult.isFailure) {
-                return Result.failure(deleteResult.exceptionOrNull() ?: Exception("Failed to delete file"))
-            }
+            // Best-effort physical delete — ignore if file is already gone
+            fileManager.deleteFile(songFile.filePath)
 
             // Remove all selections for this file first
             fileSelectionDao.deleteSelectionsForFile(songFile.id)

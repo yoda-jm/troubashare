@@ -115,37 +115,44 @@ sealed class Screen(val route: String) {
         }
     }
     
-    data object FileViewer : Screen("file_viewer/{filePath}/{fileName}/{fileType}/{songTitle}/{memberName}") {
-        const val FILE_PATH_ARG = "filePath"
-        const val FILE_NAME_ARG = "fileName"
-        const val FILE_TYPE_ARG = "fileType"
+    data object FileViewer : Screen(
+        "file_viewer/{filePath}/{fileName}/{fileType}/{songTitle}/{memberName}?fileId={fileId}&memberId={memberId}&songId={songId}"
+    ) {
+        const val FILE_PATH_ARG  = "filePath"
+        const val FILE_NAME_ARG  = "fileName"
+        const val FILE_TYPE_ARG  = "fileType"
         const val SONG_TITLE_ARG = "songTitle"
         const val MEMBER_NAME_ARG = "memberName"
-        
+        const val FILE_ID_ARG    = "fileId"
+        const val MEMBER_ID_ARG  = "memberId"
+        const val SONG_ID_ARG    = "songId"
+
         val arguments = listOf(
-            navArgument(FILE_PATH_ARG) {
-                type = NavType.StringType
-            },
-            navArgument(FILE_NAME_ARG) {
-                type = NavType.StringType
-            },
-            navArgument(FILE_TYPE_ARG) {
-                type = NavType.StringType
-            },
-            navArgument(SONG_TITLE_ARG) {
-                type = NavType.StringType
-            },
-            navArgument(MEMBER_NAME_ARG) {
-                type = NavType.StringType
-            }
+            navArgument(FILE_PATH_ARG)  { type = NavType.StringType },
+            navArgument(FILE_NAME_ARG)  { type = NavType.StringType },
+            navArgument(FILE_TYPE_ARG)  { type = NavType.StringType },
+            navArgument(SONG_TITLE_ARG) { type = NavType.StringType },
+            navArgument(MEMBER_NAME_ARG){ type = NavType.StringType },
+            navArgument(FILE_ID_ARG)    { type = NavType.StringType; defaultValue = "" },
+            navArgument(MEMBER_ID_ARG)  { type = NavType.StringType; defaultValue = "" },
+            navArgument(SONG_ID_ARG)    { type = NavType.StringType; defaultValue = "" }
         )
-        
-        fun createRoute(filePath: String, fileName: String, fileType: String, songTitle: String, memberName: String): String {
-            return route.replace("{$FILE_PATH_ARG}", java.net.URLEncoder.encode(filePath, "UTF-8"))
-                       .replace("{$FILE_NAME_ARG}", java.net.URLEncoder.encode(fileName, "UTF-8"))
-                       .replace("{$FILE_TYPE_ARG}", fileType)
-                       .replace("{$SONG_TITLE_ARG}", java.net.URLEncoder.encode(songTitle, "UTF-8"))
-                       .replace("{$MEMBER_NAME_ARG}", java.net.URLEncoder.encode(memberName, "UTF-8"))
+
+        fun createRoute(
+            filePath: String,
+            fileName: String,
+            fileType: String,
+            songTitle: String,
+            memberName: String,
+            fileId: String = "",
+            memberId: String = "",
+            songId: String = ""
+        ): String {
+            val enc = { s: String -> java.net.URLEncoder.encode(s, "UTF-8") }
+            // memberName must be non-empty (empty path segments crash Navigation)
+            val safeMemberName = enc(memberName.ifBlank { "_" })
+            return "file_viewer/${enc(filePath)}/${enc(fileName)}/$fileType/${enc(songTitle)}/$safeMemberName" +
+                   "?fileId=${enc(fileId)}&memberId=${enc(memberId)}&songId=${enc(songId)}"
         }
     }
 }

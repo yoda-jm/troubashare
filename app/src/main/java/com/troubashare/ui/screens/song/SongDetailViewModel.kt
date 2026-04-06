@@ -62,8 +62,7 @@ class SongDetailViewModel @Inject constructor(
         annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
 
     /** Returns the selected (ordered) files for a member from the pool. */
-    fun getFilesForMember(songFiles: List<SongFile>, memberId: String, partIds: List<String>): List<SongFile> {
-        val selections = fileSelections.value
+    fun getFilesForMember(songFiles: List<SongFile>, memberId: String, partIds: List<String>, selections: List<FileSelection> = fileSelections.value): List<SongFile> {
         val fileMap = songFiles.associateBy { it.id }
 
         val partSels = selections
@@ -80,7 +79,11 @@ class SongDetailViewModel @Inject constructor(
         }
     }
 
-    fun uploadFile(memberId: String, fileName: String, uri: Uri, context: Context) {
+    /**
+     * Uploads a file to the song pool and auto-selects it for ALL members.
+     * [uploadedBy] is used as the uploader (audit trail only).
+     */
+    fun uploadFile(uploadedBy: String, fileName: String, uri: Uri, context: Context) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isUploading = true, errorMessage = null)
 
@@ -94,12 +97,13 @@ class SongDetailViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Add to pool without any auto-selection first
                 val result = songRepository.addFileToSong(
                     songId = songId,
-                    uploadedBy = memberId,
+                    uploadedBy = uploadedBy,
                     fileName = fileName,
                     inputStream = inputStream,
-                    autoSelectForMember = memberId
+                    autoSelectForMember = null  // we'll select for all members below
                 )
 
                 inputStream.close()
@@ -145,6 +149,27 @@ class SongDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     errorMessage = result.exceptionOrNull()?.message ?: "Failed to reorder files"
                 )
+            }
+        }
+    }
+
+    fun assignFileToMember(songFileId: String, memberId: String) {
+        toggleFileSelection(songFileId, memberId, true)
+    }
+
+    fun removeFileAssignment(songFileId: String, memberId: String) {
+        toggleFileSelection(songFileId, memberId, false)
+    }
+
+    fun toggleFileSelection(songFileId: String, memberId: String, selected: Boolean) {
+        viewModelScope.launch {
+            if (selected) {
+                val currentSelections = fileSelections.value
+                    .filter { it.memberId == memberId }
+                val nextOrder = if (currentSelections.isEmpty()) 0 else currentSelections.maxOf { it.displayOrder } + 1
+                fileSelectionRepository.addMemberSelection(songFileId, memberId, nextOrder)
+            } else {
+                fileSelectionRepository.removeMemberSelection(songFileId, memberId)
             }
         }
     }

@@ -101,8 +101,10 @@ fun PDFPickerButton(
     }
 
     OutlinedButton(
-        onClick = { 
-            launcher.launch("application/pdf")
+        onClick = {
+            // Use */* instead of application/pdf — some OEM file managers (MIUI, etc.)
+            // crash the result delivery with the stricter MIME type.
+            launcher.launch("*/*")
         },
         modifier = modifier,
         enabled = enabled

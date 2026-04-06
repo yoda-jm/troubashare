@@ -74,6 +74,10 @@ class FileSelectionRepository(private val database: TroubaShareDatabase) {
         dao.deleteSelection(selection.toEntity())
     }
 
+    suspend fun removeMemberSelection(songFileId: String, memberId: String) {
+        dao.deleteMemberSelection(songFileId, memberId)
+    }
+
     suspend fun removeSelectionsForFile(songFileId: String) {
         dao.deleteSelectionsForFile(songFileId)
     }

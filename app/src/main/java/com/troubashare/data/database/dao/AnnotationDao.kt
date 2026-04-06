@@ -9,6 +9,13 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface AnnotationDao {
 
+    // Debug: all annotations for a file regardless of member
+    @Query("SELECT * FROM annotations WHERE fileId = :fileId")
+    suspend fun getAllAnnotationsForFile(fileId: String): List<AnnotationEntity>
+
+    @Query("SELECT * FROM annotations")
+    suspend fun getAllAnnotations(): List<AnnotationEntity>
+
     // Personal annotations for a member
     @Query("SELECT * FROM annotations WHERE fileId = :fileId AND memberId = :memberId")
     fun getAnnotationsByFileAndMember(fileId: String, memberId: String): Flow<List<AnnotationEntity>>

@@ -126,17 +126,12 @@ class AnnotationRepository(
     }
 
     suspend fun saveAnnotationWithStrokes(annotation: Annotation) {
-        val entity = AnnotationEntity(
-            id = annotation.id,
-            fileId = annotation.fileId,
-            memberId = annotation.memberId,
-            pageNumber = annotation.pageNumber,
-            scope = annotation.scope.name,
-            partId = annotation.partId,
-            createdAt = annotation.createdAt,
-            updatedAt = System.currentTimeMillis()
-        )
-        annotationDao.updateAnnotation(entity)
+        // Delete stale strokes first, then insert current ones, then update the
+        // annotation record last. This ordering matters: Room's Flow on the
+        // `annotations` table re-emits when updateAnnotation fires, so we must
+        // ensure strokes are already in `annotation_strokes` before that happens —
+        // otherwise the Flow re-emits with 0 strokes and the DB never triggers
+        // a second emission after the strokes are inserted.
 
         val existingStrokes = annotationDao.getStrokesByAnnotation(annotation.id)
         existingStrokes.forEach { stroke ->
@@ -170,6 +165,20 @@ class AnnotationRepository(
                 annotationDao.insertPoints(pointEntities)
             }
         }
+
+        // Update AFTER strokes are in place — this is the DB write that triggers
+        // Room's Flow observers, so they see the complete, up-to-date stroke list.
+        val entity = AnnotationEntity(
+            id = annotation.id,
+            fileId = annotation.fileId,
+            memberId = annotation.memberId,
+            pageNumber = annotation.pageNumber,
+            scope = annotation.scope.name,
+            partId = annotation.partId,
+            createdAt = annotation.createdAt,
+            updatedAt = System.currentTimeMillis()
+        )
+        annotationDao.updateAnnotation(entity)
     }
 
     suspend fun deleteAnnotation(annotation: Annotation) {
@@ -195,6 +204,33 @@ class AnnotationRepository(
 
     suspend fun clearAnnotationsForFile(fileId: String) {
         annotationDao.deleteAnnotationsByFile(fileId)
+    }
+
+    /** Returns a human-readable dump of every annotation row for a given fileId. */
+    suspend fun debugDumpForFile(fileId: String): String {
+        val all = annotationDao.getAllAnnotationsForFile(fileId)
+        if (all.isEmpty()) return "NO annotations found for fileId=$fileId"
+        return buildString {
+            appendLine("fileId queried: $fileId")
+            appendLine("Total annotation rows: ${all.size}")
+            all.forEach { ann ->
+                val strokes = annotationDao.getStrokesByAnnotation(ann.id)
+                appendLine("  • memberId=${ann.memberId}  page=${ann.pageNumber}  strokes=${strokes.size}  annId=${ann.id.take(8)}")
+            }
+        }
+    }
+
+    /** Returns a dump of ALL annotations in the entire DB (for cross-checking fileIds). */
+    suspend fun debugDumpAll(): String {
+        val all = annotationDao.getAllAnnotations()
+        if (all.isEmpty()) return "DB is empty — no annotations at all"
+        return buildString {
+            appendLine("Total annotation rows in DB: ${all.size}")
+            all.forEach { ann ->
+                val strokes = annotationDao.getStrokesByAnnotation(ann.id)
+                appendLine("  fileId=${ann.fileId.take(8)}  memberId=${ann.memberId}  page=${ann.pageNumber}  strokes=${strokes.size}")
+            }
+        }
     }
 
     suspend fun removeStrokeFromAnnotation(annotationId: String, stroke: AnnotationStroke) {

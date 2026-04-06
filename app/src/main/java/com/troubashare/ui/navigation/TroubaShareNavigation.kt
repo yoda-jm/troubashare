@@ -105,14 +105,17 @@ fun TroubaShareNavigation(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
-                onViewFile = { songFile, songTitle, memberName ->
+                onViewFile = { songFile, songTitle, memberName, memberId ->
                     navController.navigate(
                         Screen.FileViewer.createRoute(
                             filePath = songFile.filePath,
                             fileName = songFile.fileName,
                             fileType = songFile.fileType.name,
                             songTitle = songTitle,
-                            memberName = memberName
+                            memberName = memberName,
+                            fileId = songFile.id,
+                            memberId = memberId,
+                            songId = songFile.songId
                         )
                     )
                 }
@@ -237,41 +240,30 @@ fun TroubaShareNavigation(
             route = Screen.FileViewer.route,
             arguments = Screen.FileViewer.arguments
         ) { backStackEntry ->
-            val filePath = URLDecoder.decode(
-                backStackEntry.arguments?.getString(Screen.FileViewer.FILE_PATH_ARG) ?: "",
-                "UTF-8"
-            )
-            val fileName = URLDecoder.decode(
-                backStackEntry.arguments?.getString(Screen.FileViewer.FILE_NAME_ARG) ?: "",
-                "UTF-8"
-            )
-            val fileType = backStackEntry.arguments?.getString(Screen.FileViewer.FILE_TYPE_ARG) ?: ""
-            val songTitle = URLDecoder.decode(
-                backStackEntry.arguments?.getString(Screen.FileViewer.SONG_TITLE_ARG) ?: "",
-                "UTF-8"
-            )
-            val memberName = URLDecoder.decode(
-                backStackEntry.arguments?.getString(Screen.FileViewer.MEMBER_NAME_ARG) ?: "",
-                "UTF-8"
-            )
-            
+            val dec = { key: String -> URLDecoder.decode(backStackEntry.arguments?.getString(key) ?: "", "UTF-8") }
+            val filePath   = dec(Screen.FileViewer.FILE_PATH_ARG)
+            val fileName   = dec(Screen.FileViewer.FILE_NAME_ARG)
+            val fileType   = backStackEntry.arguments?.getString(Screen.FileViewer.FILE_TYPE_ARG) ?: ""
+            val songTitle  = dec(Screen.FileViewer.SONG_TITLE_ARG)
+            val memberName = dec(Screen.FileViewer.MEMBER_NAME_ARG).let { if (it == "_") "" else it }
+            val fileId     = dec(Screen.FileViewer.FILE_ID_ARG)
+            val songId     = dec(Screen.FileViewer.SONG_ID_ARG)
+
             FileViewerScreen(
                 songFile = SongFile(
-                    id = "",
-                    songId = "",
+                    id = fileId,
+                    songId = songId,
                     uploadedBy = "",
                     fileName = fileName,
                     filePath = filePath,
-                    fileType = when(fileType.uppercase()) {
+                    fileType = when (fileType.uppercase()) {
                         "PDF" -> com.troubashare.domain.model.FileType.PDF
-                        else -> com.troubashare.domain.model.FileType.IMAGE
+                        else  -> com.troubashare.domain.model.FileType.IMAGE
                     }
                 ),
                 songTitle = songTitle,
                 memberName = memberName,
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,8 +13,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.troubashare.domain.model.FileType
 import com.troubashare.domain.model.Song
 import com.troubashare.domain.model.SongFile
+import com.troubashare.ui.components.ImagePickerButton
+import com.troubashare.ui.components.PDFPickerButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -21,7 +25,7 @@ fun SongDetailScreen(
     groupId: String,
     songId: String,
     onNavigateBack: () -> Unit,
-    onViewFile: (SongFile, String, String) -> Unit = { _, _, _ -> },
+    onViewFile: (SongFile, String, String, String) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -30,6 +34,8 @@ fun SongDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val song by viewModel.song.collectAsState()
     val currentGroup by viewModel.currentGroup.collectAsState()
+    val fileSelections by viewModel.fileSelections.collectAsState()
+    var showMatrixDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -71,12 +77,12 @@ fun SongDetailScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Song Info Section
+                // Song Info
                 item {
                     SongInfoCard(song = currentSong)
                 }
 
-                // File Management Section
+                // File Pool + per-member sections
                 item {
                     Card {
                         Column(
@@ -85,57 +91,135 @@ fun SongDetailScreen(
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = "Files & Sheet Music",
+                                text = "Song Files",
                                 style = MaterialTheme.typography.titleMedium
                             )
+                            Text(
+                                text = "Files added here are shared with all members",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                            // File Upload Buttons
+                            val uploaderMemberId = currentGroup?.members?.firstOrNull()?.id ?: ""
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                PDFPickerButton(
+                                    onPdfSelected = { uri, fileName ->
+                                        viewModel.uploadFile(uploaderMemberId, fileName, uri, context)
+                                    },
+                                    text = "Add PDF",
+                                    enabled = !uiState.isUploading,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ImagePickerButton(
+                                    onImageSelected = { uri, fileName ->
+                                        viewModel.uploadFile(uploaderMemberId, fileName, uri, context)
+                                    },
+                                    text = "Add Image",
+                                    enabled = !uiState.isUploading,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            if (uiState.isUploading) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+
+                            // Pool file list — each can be deleted from the pool entirely
+                            val poolFiles = currentSong.files.filter { it.fileType != FileType.ANNOTATION }
+
+                            // Matrix assignment dialog
+                            val members = currentGroup?.members ?: emptyList()
+                            if (poolFiles.isNotEmpty() && members.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = { showMatrixDialog = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.GridOn,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Manage Assignments")
+                                }
+                            }
+                            if (showMatrixDialog) {
+                                FileSelectionMatrixDialog(
+                                    poolFiles = poolFiles,
+                                    members = members,
+                                    selections = fileSelections,
+                                    onToggle = { fileId, memberId, selected ->
+                                        viewModel.toggleFileSelection(fileId, memberId, selected)
+                                    },
+                                    onDismiss = { showMatrixDialog = false }
+                                )
+                            }
+
+                            if (poolFiles.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                poolFiles.forEachIndexed { index, file ->
+                                    FileItem(
+                                        file = file,
+                                        allFiles = currentSong.files,
+                                        position = index,
+                                        totalFiles = poolFiles.size,
+                                        onDelete = { viewModel.deleteFile(file) },
+                                        onView = { onViewFile(file, currentSong.title, "", "") },
+                                        onMoveUp = { /* pool order not managed here */ },
+                                        onMoveDown = { }
+                                    )
+                                    if (index < poolFiles.lastIndex) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                    }
+                                }
+                            }
+
+                            // Per-member assignment sections
                             currentGroup?.let { group ->
                                 if (group.members.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    HorizontalDivider()
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Add files for:",
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        text = "Member Assignments",
+                                        style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-
                                     Spacer(modifier = Modifier.height(8.dp))
 
-                                    // Member selection and file upload
                                     group.members.forEach { member ->
                                         val memberFiles = viewModel.getFilesForMember(
-                                            currentSong.files, member.id, member.partIds
+                                            currentSong.files, member.id, member.partIds, fileSelections
                                         )
                                         MemberFileSection(
                                             member = member,
-                                            files = memberFiles,
-                                            onFileUpload = { uri, fileName ->
-                                                viewModel.uploadFile(member.id, fileName, uri, context)
+                                            assignedFiles = memberFiles,
+                                            poolFiles = poolFiles,
+                                            onRemoveAssignment = { file ->
+                                                viewModel.removeFileAssignment(file.id, member.id)
                                             },
-                                            onFileDelete = { file ->
-                                                viewModel.deleteFile(file)
+                                            onAssign = { file ->
+                                                viewModel.assignFileToMember(file.id, member.id)
                                             },
                                             onFileView = { file ->
-                                                onViewFile(file, currentSong.title, member.name)
+                                                onViewFile(file, currentSong.title, member.name, member.id)
                                             },
                                             onFileMoveUp = { file, position ->
                                                 viewModel.moveFile(member.id, file.id, position - 1)
                                             },
                                             onFileMoveDown = { file, position ->
                                                 viewModel.moveFile(member.id, file.id, position + 1)
-                                            },
-                                            isUploading = uiState.isUploading
+                                            }
                                         )
-
-                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
                                     }
-                                } else {
-                                    Text(
-                                        text = "Add members to your group to upload files",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
                             }
                         }
@@ -160,7 +244,6 @@ fun SongDetailScreen(
                 }
             }
         } ?: run {
-            // Loading state
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center

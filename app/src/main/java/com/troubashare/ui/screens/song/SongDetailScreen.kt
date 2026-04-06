@@ -35,6 +35,7 @@ fun SongDetailScreen(
     val song by viewModel.song.collectAsState()
     val currentGroup by viewModel.currentGroup.collectAsState()
     val fileSelections by viewModel.fileSelections.collectAsState()
+    val isAdmin by viewModel.isAdmin.collectAsState()
     var showMatrixDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -100,42 +101,44 @@ fun SongDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            if (isAdmin) {
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                            val uploaderMemberId = currentGroup?.members?.firstOrNull()?.id ?: ""
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                PDFPickerButton(
-                                    onPdfSelected = { uri, fileName ->
-                                        viewModel.uploadFile(uploaderMemberId, fileName, uri, context)
-                                    },
-                                    text = "Add PDF",
-                                    enabled = !uiState.isUploading,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                ImagePickerButton(
-                                    onImageSelected = { uri, fileName ->
-                                        viewModel.uploadFile(uploaderMemberId, fileName, uri, context)
-                                    },
-                                    text = "Add Image",
-                                    enabled = !uiState.isUploading,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+                                val uploaderMemberId = currentGroup?.members?.firstOrNull()?.id ?: ""
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    PDFPickerButton(
+                                        onPdfSelected = { uri, fileName ->
+                                            viewModel.uploadFile(uploaderMemberId, fileName, uri, context)
+                                        },
+                                        text = "Add PDF",
+                                        enabled = !uiState.isUploading,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    ImagePickerButton(
+                                        onImageSelected = { uri, fileName ->
+                                            viewModel.uploadFile(uploaderMemberId, fileName, uri, context)
+                                        },
+                                        text = "Add Image",
+                                        enabled = !uiState.isUploading,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
 
-                            if (uiState.isUploading) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                if (uiState.isUploading) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
                             }
 
                             // Pool file list — each can be deleted from the pool entirely
                             val poolFiles = currentSong.files.filter { it.fileType != FileType.ANNOTATION }
 
-                            // Matrix assignment dialog
+                            // Matrix assignment dialog (admin only)
                             val members = currentGroup?.members ?: emptyList()
-                            if (poolFiles.isNotEmpty() && members.isNotEmpty()) {
+                            if (isAdmin && poolFiles.isNotEmpty() && members.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 OutlinedButton(
                                     onClick = { showMatrixDialog = true },
@@ -170,6 +173,7 @@ fun SongDetailScreen(
                                         allFiles = currentSong.files,
                                         position = index,
                                         totalFiles = poolFiles.size,
+                                        canAdmin = isAdmin,
                                         onDelete = { viewModel.deleteFile(file) },
                                         onView = { onViewFile(file, currentSong.title, "", "") },
                                         onMoveUp = { /* pool order not managed here */ },

@@ -5,11 +5,13 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.data.repository.AnnotationRepository
 import com.troubashare.data.repository.FileSelectionRepository
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.domain.model.Annotation
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.FileSelection
 import com.troubashare.domain.model.Group
 import com.troubashare.domain.model.Song
@@ -25,11 +27,16 @@ class SongDetailViewModel @Inject constructor(
     private val groupRepository: GroupRepository,
     private val annotationRepository: AnnotationRepository,
     private val fileSelectionRepository: FileSelectionRepository,
+    private val sessionManager: SessionManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val songId: String = savedStateHandle["songId"] ?: ""
     private val groupId: String = savedStateHandle["groupId"] ?: ""
+
+    val isAdmin: StateFlow<Boolean> = sessionManager.mode
+        .map { it == AppMode.ADMIN }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = sessionManager.mode.value == AppMode.ADMIN)
 
     private val _uiState = MutableStateFlow(SongDetailUiState())
     val uiState: StateFlow<SongDetailUiState> = _uiState.asStateFlow()

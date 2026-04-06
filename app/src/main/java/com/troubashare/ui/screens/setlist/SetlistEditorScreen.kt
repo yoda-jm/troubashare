@@ -29,6 +29,7 @@ fun SetlistEditorScreen(
     val availableSongs by viewModel.availableSongs.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val editMetadataState by viewModel.editMetadataState.collectAsState()
+    val isAdmin by viewModel.isAdmin.collectAsState()
     
     setlist?.let { currentSetlist ->
         Scaffold(
@@ -59,31 +60,33 @@ fun SetlistEditorScreen(
                         }
                     },
                     actions = {
-                        // Edit metadata
-                        IconButton(
-                            onClick = viewModel::showEditMetadataDialog
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit setlist info"
-                            )
-                        }
-                        
-                        // Save changes
-                        IconButton(
-                            onClick = viewModel::saveSetlist,
-                            enabled = !uiState.isSaving
-                        ) {
-                            if (uiState.isSaving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
+                        if (isAdmin) {
+                            // Edit metadata
+                            IconButton(
+                                onClick = viewModel::showEditMetadataDialog
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Save,
-                                    contentDescription = "Save setlist"
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit setlist info"
                                 )
+                            }
+
+                            // Save changes
+                            IconButton(
+                                onClick = viewModel::saveSetlist,
+                                enabled = !uiState.isSaving
+                            ) {
+                                if (uiState.isSaving) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "Save setlist"
+                                    )
+                                }
                             }
                         }
                     }
@@ -122,13 +125,14 @@ fun SetlistEditorScreen(
                                 SetlistSongItem(
                                     song = item.song,
                                     position = item.position,
+                                    canEdit = isAdmin,
                                     onRemove = { viewModel.removeSongFromSetlist(item.song.id) },
-                                    onMoveUp = { 
+                                    onMoveUp = {
                                         if (item.position > 0) {
                                             viewModel.moveSong(item.song.id, item.position - 1)
                                         }
                                     },
-                                    onMoveDown = { 
+                                    onMoveDown = {
                                         if (item.position < currentSetlist.items.size - 1) {
                                             viewModel.moveSong(item.song.id, item.position + 1)
                                         }
@@ -141,8 +145,8 @@ fun SetlistEditorScreen(
                     }
                 }
                 
-                // Add songs section
-                Card {
+                // Add songs section (admin only)
+                if (isAdmin) Card {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -240,6 +244,7 @@ fun SetlistEditorScreen(
 fun SetlistSongItem(
     song: Song,
     position: Int,
+    canEdit: Boolean = true,
     onRemove: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
@@ -282,50 +287,52 @@ fun SetlistSongItem(
                 }
             }
             
-            // Reordering controls with drag handle style
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                IconButton(
-                    onClick = onMoveUp,
-                    enabled = canMoveUp,
-                    modifier = Modifier.size(36.dp)
+            if (canEdit) {
+                // Reordering controls with drag handle style
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    IconButton(
+                        onClick = onMoveUp,
+                        enabled = canMoveUp,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Move up",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Drag handle visual
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Move up",
-                        modifier = Modifier.size(20.dp)
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag to reorder",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+
+                    IconButton(
+                        onClick = onMoveDown,
+                        enabled = canMoveDown,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Move down",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Remove button
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Remove from setlist",
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
-                
-                // Drag handle visual
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-                
-                IconButton(
-                    onClick = onMoveDown,
-                    enabled = canMoveDown,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Move down",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            
-            // Remove button
-            IconButton(onClick = onRemove) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Remove from setlist",
-                    tint = MaterialTheme.colorScheme.error
-                )
             }
         }
     }

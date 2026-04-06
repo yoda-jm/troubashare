@@ -33,6 +33,7 @@ fun SetlistsScreen(
     val createSetlistState by viewModel.createSetlistState.collectAsState()
     val setlists by viewModel.setlists.collectAsState()
     val currentGroup by viewModel.currentGroup.collectAsState()
+    val isAdmin by viewModel.isAdmin.collectAsState()
 
     Scaffold(
         topBar = {
@@ -62,13 +63,15 @@ fun SetlistsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.showCreateSetlistDialog() }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Create setlist"
-                )
+            if (isAdmin) {
+                FloatingActionButton(
+                    onClick = { viewModel.showCreateSetlistDialog() }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Create setlist"
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -115,17 +118,19 @@ fun SetlistsScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.showCreateSetlistDialog() }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Create Setlist")
+                        if (isAdmin) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.showCreateSetlistDialog() }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Create Setlist")
+                            }
                         }
                     }
                 }
@@ -136,6 +141,7 @@ fun SetlistsScreen(
                     items(setlists, key = { it.id }) { setlist ->
                         SetlistCard(
                             setlist = setlist,
+                            isAdmin = isAdmin,
                             onClick = { onSetlistClick(setlist.id) },
                             onEdit = { onEditSetlist(setlist.id) },
                             onDelete = { viewModel.deleteSetlist(setlist) }
@@ -163,6 +169,7 @@ fun SetlistsScreen(
 @Composable
 fun SetlistCard(
     setlist: Setlist,
+    isAdmin: Boolean = true,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -235,23 +242,25 @@ fun SetlistCard(
                     }
                 }
                 
-                Row {
-                    IconButton(onClick = onEdit) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit setlist",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    
-                    IconButton(
-                        onClick = { showDeleteDialog = true }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete setlist",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                if (isAdmin) {
+                    Row {
+                        IconButton(onClick = onEdit) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit setlist",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showDeleteDialog = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete setlist",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }

@@ -26,6 +26,7 @@ fun FileItem(
     allFiles: List<SongFile> = emptyList(), // All files to check for annotation layers
     position: Int,
     totalFiles: Int,
+    canAdmin: Boolean = true,
     onDelete: () -> Unit,
     onView: () -> Unit,
     onMoveUp: () -> Unit,
@@ -186,12 +187,14 @@ fun FileItem(
                 Spacer(modifier = Modifier.width(4.dp))
             }
 
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete file",
-                    tint = MaterialTheme.colorScheme.error
-                )
+            if (canAdmin) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete file",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }

@@ -3,8 +3,10 @@ package com.troubashare.ui.screens.setlist
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SetlistRepository
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.Setlist
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,9 +19,14 @@ import javax.inject.Inject
 class SetlistsViewModel @Inject constructor(
     private val setlistRepository: SetlistRepository,
     private val groupRepository: GroupRepository,
+    private val sessionManager: SessionManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val groupId: String = savedStateHandle["groupId"] ?: ""
+
+    val isAdmin: StateFlow<Boolean> = sessionManager.mode
+        .map { it == AppMode.ADMIN }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = sessionManager.mode.value == AppMode.ADMIN)
 
     val currentGroup: StateFlow<com.troubashare.domain.model.Group?> = flow {
         emit(groupRepository.getGroupById(groupId))

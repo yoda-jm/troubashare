@@ -40,6 +40,7 @@ fun LibraryScreen(
     val editSongState by viewModel.editSongState.collectAsState()
     val songs by viewModel.songs.collectAsState()
     val currentGroup by viewModel.currentGroup.collectAsState()
+    val isAdmin by viewModel.isAdmin.collectAsState()
 
     Scaffold(
         topBar = {
@@ -69,13 +70,15 @@ fun LibraryScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.showCreateSongDialog() }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add song"
-                )
+            if (isAdmin) {
+                FloatingActionButton(
+                    onClick = { viewModel.showCreateSongDialog() }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add song"
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -122,17 +125,19 @@ fun LibraryScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.showCreateSongDialog() }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Add Song")
+                        if (isAdmin) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.showCreateSongDialog() }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add Song")
+                            }
                         }
                     }
                 }
@@ -143,8 +148,9 @@ fun LibraryScreen(
                     items(songs, key = { it.id }) { song ->
                         SongCard(
                             song = song,
+                            isAdmin = isAdmin,
                             onClick = { onSongClick(song.id) },
-                            onEdit = { 
+                            onEdit = {
                                 viewModel.showEditSongDialog(song)
                             },
                             onDelete = { viewModel.deleteSong(song) }
@@ -194,6 +200,7 @@ fun LibraryScreen(
 @Composable
 fun SongCard(
     song: Song,
+    isAdmin: Boolean = true,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -277,23 +284,25 @@ fun SongCard(
                     }
                 }
                 
-                Row {
-                    IconButton(
-                        onClick = onEdit
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit song"
-                        )
-                    }
-                    IconButton(
-                        onClick = { showDeleteDialog = true }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete song",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                if (isAdmin) {
+                    Row {
+                        IconButton(
+                            onClick = onEdit
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit song"
+                            )
+                        }
+                        IconButton(
+                            onClick = { showDeleteDialog = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete song",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }

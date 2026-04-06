@@ -3,8 +3,10 @@ package com.troubashare.ui.screens.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SongRepository
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.Group
 import com.troubashare.domain.model.Song
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,9 +20,14 @@ import javax.inject.Inject
 class LibraryViewModel @Inject constructor(
     private val songRepository: SongRepository,
     private val groupRepository: GroupRepository,
+    private val sessionManager: SessionManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val groupId: String = savedStateHandle["groupId"] ?: ""
+
+    val isAdmin: StateFlow<Boolean> = sessionManager.mode
+        .map { it == AppMode.ADMIN }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = sessionManager.mode.value == AppMode.ADMIN)
 
     val currentGroup: StateFlow<Group?> = flow {
         emit(groupRepository.getGroupById(groupId))

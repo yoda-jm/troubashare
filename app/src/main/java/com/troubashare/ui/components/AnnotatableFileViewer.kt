@@ -82,7 +82,7 @@ fun AnnotatablePDFViewer(
     
     val drawingState by viewModel.drawingState.collectAsState()
     val annotations by viewModel.currentPageAnnotations.collectAsState()
-    
+
     // Update viewModel's current page when local page changes
     LaunchedEffect(currentPage) {
         viewModel.setCurrentPage(currentPage)
@@ -345,6 +345,7 @@ fun PDFContent(
     viewModel: FileViewerViewModel,
     modifier: Modifier = Modifier
 ) {
+    val activeLayerId by viewModel.activeLayerId.collectAsState()
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -441,6 +442,7 @@ fun PDFContent(
                             onStrokeAdded = viewModel::addStroke,
                             onDrawingStateChanged = viewModel::updateDrawingState,
                             onStrokeUpdated = viewModel::updateStroke,
+                            activeLayerId = activeLayerId,
                             onZoomGesture = { zoom, pan ->
                                 val newScale = (currentScale * zoom).coerceIn(0.5f, 3f)
                                 currentScale = newScale
@@ -803,6 +805,7 @@ private fun ImageContent(
     annotations: List<com.troubashare.domain.model.Annotation>,
     viewModel: FileViewerViewModel
 ) {
+    val activeLayerId by viewModel.activeLayerId.collectAsState()
     // Load image bitmap for aspect ratio calculation
     var imageBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
@@ -903,6 +906,7 @@ private fun ImageContent(
                     onStrokeAdded = viewModel::addStroke,
                     onDrawingStateChanged = viewModel::updateDrawingState,
                     onStrokeUpdated = viewModel::updateStroke,
+                    activeLayerId = activeLayerId,
                     onZoomGesture = { zoom, pan ->
                         val newScale = (scale * zoom).coerceIn(0.5f, 3f)
                         scale = newScale

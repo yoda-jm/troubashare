@@ -34,6 +34,7 @@ fun AnnotationCanvas(
     onDoubleTap: ((tapOffset: Offset, size: androidx.compose.ui.geometry.Size) -> Unit)? = null,
     onStrokeUpdated: ((old: AnnotationStroke, new: AnnotationStroke) -> Unit)? = null,
     onStrokeDeleted: ((AnnotationStroke) -> Unit)? = null,
+    activeLayerId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var currentPoints by remember { mutableStateOf<List<AnnotationPoint>>(emptyList()) }
@@ -162,9 +163,13 @@ fun AnnotationCanvas(
                                 val downPosition = down.position
                                 val downTime = System.currentTimeMillis()
 
-                                // Find which stroke was tapped
-                                val allStrokes = annotations.flatMap { it.strokes } + localStrokes
-                                val tappedStroke = findStrokeAtPoint(allStrokes, downPosition, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
+                                // Find which stroke was tapped — restrict to active layer so users
+                                // can only select strokes they can edit
+                                val selectableStrokes = if (activeLayerId != null)
+                                    annotations.filter { it.layerId == activeLayerId }.flatMap { it.strokes } + localStrokes
+                                else
+                                    annotations.flatMap { it.strokes } + localStrokes
+                                val tappedStroke = findStrokeAtPoint(selectableStrokes, downPosition, effectiveWidth, effectiveHeight, pdfOffsetX, pdfOffsetY)
 
                                 // Check if we should prepare for drag-to-move or resize
                                 var canDragSelectedStroke = false

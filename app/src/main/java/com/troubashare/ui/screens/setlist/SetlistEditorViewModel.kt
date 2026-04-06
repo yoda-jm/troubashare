@@ -3,8 +3,10 @@ package com.troubashare.ui.screens.setlist
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.Setlist
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,9 +19,14 @@ import javax.inject.Inject
 class SetlistEditorViewModel @Inject constructor(
     private val setlistRepository: SetlistRepository,
     private val songRepository: SongRepository,
+    private val sessionManager: SessionManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val setlistId: String = savedStateHandle["setlistId"] ?: ""
+
+    val isAdmin: StateFlow<Boolean> = sessionManager.mode
+        .map { it == AppMode.ADMIN }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = sessionManager.mode.value == AppMode.ADMIN)
 
     private val _uiState = MutableStateFlow(SetlistEditorUiState())
     val uiState: StateFlow<SetlistEditorUiState> = _uiState.asStateFlow()

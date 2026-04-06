@@ -24,5 +24,6 @@ data class AnnotationLayerEntity(
     val ownerId: String,
     val colorIndex: Int = 0,
     val displayOrder: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val isPromoted: Boolean = false
 )

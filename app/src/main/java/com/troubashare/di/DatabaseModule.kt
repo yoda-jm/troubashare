@@ -4,6 +4,7 @@ import android.content.Context
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.database.dao.*
 import com.troubashare.data.database.dao.AnnotationLayerDao
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.data.repository.*
 import com.troubashare.data.file.FileManager
 import com.troubashare.data.sync.DeviceManager
@@ -51,6 +52,11 @@ object DatabaseModule {
 
     @Provides
     fun provideChangeLogDao(database: TroubaShareDatabase): ChangeLogDao = database.changeLogDao()
+
+    @Provides
+    @Singleton
+    fun provideSessionManager(@ApplicationContext context: Context): SessionManager =
+        SessionManager(context)
 
     @Provides
     @Singleton

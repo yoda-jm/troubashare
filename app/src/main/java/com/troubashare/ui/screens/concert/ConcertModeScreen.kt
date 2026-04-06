@@ -357,10 +357,10 @@ fun ConcertModeScreen(
                             LaunchedEffect(file.id, memberId) {
                                 val allLayers = viewModel.getLayersForFileOnce(file.id)
                                 val hidden = prefsManager.getHiddenLayerIds(file.id, memberId)
-                                // Member sees their personal layers + shared layers, minus hidden
+                                // Member sees their personal layers + shared + promoted layers, minus hidden
                                 visibleLayerIds.value = allLayers
                                     .filter { layer ->
-                                        (layer.ownerId == memberId || layer.isShared) &&
+                                        (layer.ownerId == memberId || layer.isShared || layer.isPromoted) &&
                                         layer.id !in hidden
                                     }
                                     .map { it.id }

@@ -30,4 +30,7 @@ interface AnnotationLayerDao {
 
     @Query("DELETE FROM annotation_layers WHERE fileId = :fileId")
     suspend fun deleteLayersForFile(fileId: String)
+
+    @Query("UPDATE annotation_layers SET isPromoted = :promoted WHERE id = :layerId")
+    suspend fun setPromoted(layerId: String, promoted: Boolean)
 }

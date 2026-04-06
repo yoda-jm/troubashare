@@ -3,8 +3,10 @@ package com.troubashare.ui.screens.home
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.data.repository.SetlistRepository
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.Group
 import com.troubashare.domain.model.Member
 import com.troubashare.domain.model.Setlist
@@ -17,9 +19,17 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val groupRepository: GroupRepository,
     private val setlistRepository: SetlistRepository,
+    private val sessionManager: SessionManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val groupId: String = savedStateHandle["groupId"] ?: ""
+
+    val sessionMode = sessionManager.mode
+    val sessionMemberId = sessionManager.activeMemberId
+
+    fun setSession(mode: AppMode, memberId: String?) {
+        sessionManager.setSession(mode, memberId)
+    }
 
     val concertSetlists: StateFlow<List<Setlist>> = setlistRepository.getSetlistsByGroupId(groupId)
         .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = emptyList())
@@ -142,12 +152,21 @@ class HomeViewModel @Inject constructor(
     fun hideConcertModeDialog() {
         _uiState.value = _uiState.value.copy(showConcertModeDialog = false)
     }
+
+    fun showSessionDialog() {
+        _uiState.value = _uiState.value.copy(showSessionDialog = true)
+    }
+
+    fun hideSessionDialog() {
+        _uiState.value = _uiState.value.copy(showSessionDialog = false)
+    }
 }
 
 data class HomeUiState(
     val showGroupSwitcher: Boolean = false,
     val showEditGroupDialog: Boolean = false,
-    val showConcertModeDialog: Boolean = false
+    val showConcertModeDialog: Boolean = false,
+    val showSessionDialog: Boolean = false
 )
 
 data class EditGroupUiState(

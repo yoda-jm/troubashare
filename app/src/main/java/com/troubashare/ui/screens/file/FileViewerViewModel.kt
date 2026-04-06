@@ -8,7 +8,9 @@ import androidx.lifecycle.viewModelScope
 import com.troubashare.data.repository.AnnotationRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.preferences.AnnotationPreferencesManager
+import com.troubashare.data.preferences.SessionManager
 import com.troubashare.domain.model.Annotation as DomainAnnotation
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.AnnotationLayer
 import com.troubashare.domain.model.AnnotationStroke
 import com.troubashare.domain.model.AnnotationPoint
@@ -40,6 +42,7 @@ import javax.inject.Inject
 class FileViewerViewModel @Inject constructor(
     private val annotationRepository: AnnotationRepository,
     private val songRepository: SongRepository,
+    private val sessionManager: SessionManager,
     savedStateHandle: SavedStateHandle,
     @ApplicationContext context: Context
 ) : ViewModel() {
@@ -52,8 +55,25 @@ class FileViewerViewModel @Inject constructor(
     private val fileResolver = FileResolver(songRepository, fileId, memberId, songId, filePath)
     private val preferencesManager = AnnotationPreferencesManager(context)
 
-    /** True when opened from the file pool (no specific member) — shared layers only. */
+    /**
+     * True when opened from the file pool (no member context) — admin/shared-layer view.
+     * Takes priority over the session mode.
+     */
     val isFileLevelView: Boolean = memberId.isBlank()
+
+    /**
+     * Effective viewing mode as a StateFlow (reacts to session changes).
+     * Admin is forced when there is no member context.
+     */
+    val viewerMode: StateFlow<AppMode> = if (isFileLevelView) {
+        MutableStateFlow(AppMode.ADMIN)
+    } else {
+        sessionManager.mode.map { if (isFileLevelView) AppMode.ADMIN else it }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, sessionManager.mode.value)
+    }
+
+    /** Snapshot of the current effective mode (used internally). */
+    private val currentViewerMode: AppMode get() = viewerMode.value
 
     private val _uiState = MutableStateFlow(FileViewerUiState())
     val uiState: StateFlow<FileViewerUiState> = _uiState.asStateFlow()
@@ -135,8 +155,11 @@ class FileViewerViewModel @Inject constructor(
                 .flatMapLatest { allLayers ->
                     // Filter to layers this viewer can see
                     val viewerLayers = allLayers.filter { layer ->
-                        if (isFileLevelView) layer.isShared
-                        else layer.ownerId == mid || layer.isShared
+                        when (currentViewerMode) {
+                            AppMode.ADMIN      -> layer.isShared || layer.isPromoted
+                            AppMode.CONDUCTOR  -> true
+                            AppMode.PERFORMER  -> layer.ownerId == mid || layer.isShared || layer.isPromoted
+                        }
                     }
                     _layers.value = viewerLayers
                     ensureValidActiveLayer(viewerLayers)
@@ -161,8 +184,11 @@ class FileViewerViewModel @Inject constructor(
         val currentId = _activeLayerId.value
 
         // A writable layer for this viewer
-        fun isWritable(layer: AnnotationLayer) =
-            if (isFileLevelView) layer.isShared else !layer.isShared
+        fun isWritable(layer: AnnotationLayer) = when (currentViewerMode) {
+            AppMode.ADMIN     -> layer.isShared
+            AppMode.CONDUCTOR,
+            AppMode.PERFORMER -> layer.ownerId == mid
+        }
 
         val best = viewerLayers.find { it.id == currentId && isWritable(it) }
             ?: viewerLayers.find { it.id == storedId && isWritable(it) }
@@ -177,9 +203,7 @@ class FileViewerViewModel @Inject constructor(
 
     fun setActiveLayer(layerId: String) {
         val layer = _layers.value.find { it.id == layerId } ?: return
-        // Only writable layers can be active
-        if (isFileLevelView && !layer.isShared) return
-        if (!isFileLevelView && layer.isShared) return
+        if (!canEditLayer(layerId)) return
         _activeLayerId.value = layerId
         preferencesManager.setActiveLayerId(
             fileResolver.getEffectiveFileId(), fileResolver.getEffectiveMemberId(), layerId
@@ -200,8 +224,11 @@ class FileViewerViewModel @Inject constructor(
 
     fun createLayer(name: String) {
         val fid = fileResolver.getEffectiveFileId()
-        val ownerId = if (isFileLevelView) SHARED_ANNOTATION_LAYER
-                      else fileResolver.getEffectiveMemberId()
+        val ownerId = when (currentViewerMode) {
+            AppMode.ADMIN     -> SHARED_ANNOTATION_LAYER
+            AppMode.PERFORMER,
+            AppMode.CONDUCTOR -> fileResolver.getEffectiveMemberId()
+        }
         val existingCount = _layers.value.count { it.ownerId == ownerId }
         viewModelScope.launch {
             try {
@@ -220,6 +247,17 @@ class FileViewerViewModel @Inject constructor(
         }
     }
 
+    fun promoteLayer(layerId: String, promoted: Boolean) {
+        if (!canEditLayer(layerId)) return
+        viewModelScope.launch {
+            try {
+                annotationRepository.setLayerPromoted(layerId, promoted)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = "Failed to update layer: ${e.message}")
+            }
+        }
+    }
+
     fun renameLayer(layerId: String, newName: String) {
         if (!canEditLayer(layerId)) return
         viewModelScope.launch {
@@ -234,9 +272,7 @@ class FileViewerViewModel @Inject constructor(
     fun deleteLayer(layerId: String) {
         if (!canEditLayer(layerId)) return
         // Don't delete the last writable layer
-        val writableLayers = _layers.value.filter { layer ->
-            if (isFileLevelView) layer.isShared else !layer.isShared
-        }
+        val writableLayers = _layers.value.filter { canEditLayer(it.id) }
         if (writableLayers.size <= 1) {
             _uiState.value = _uiState.value.copy(errorMessage = "Cannot delete the last layer.")
             return
@@ -257,7 +293,12 @@ class FileViewerViewModel @Inject constructor(
     /** True if this viewer can rename/delete the given layer. */
     fun canEditLayer(layerId: String): Boolean {
         val layer = _layers.value.find { it.id == layerId } ?: return false
-        return if (isFileLevelView) layer.isShared else !layer.isShared
+        val mid = fileResolver.getEffectiveMemberId()
+        return when (currentViewerMode) {
+            AppMode.ADMIN     -> layer.isShared
+            AppMode.PERFORMER,
+            AppMode.CONDUCTOR -> layer.ownerId == mid
+        }
     }
 
     // ── Page navigation ──────────────────────────────────────────────────────

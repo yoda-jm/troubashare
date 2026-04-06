@@ -16,7 +16,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.R
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.Group
+import com.troubashare.domain.model.Member
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,6 +38,9 @@ fun HomeScreen(
     val currentGroup by viewModel.currentGroup.collectAsState()
     val allGroups by viewModel.allGroups.collectAsState()
     val editGroupState by viewModel.editGroupState.collectAsState()
+    val sessionMode by viewModel.sessionMode.collectAsState()
+    val sessionMemberId by viewModel.sessionMemberId.collectAsState()
+    val members by viewModel.concertMembers.collectAsState()
     
     Scaffold(
         topBar = {
@@ -100,8 +105,16 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
-            Spacer(modifier = Modifier.height(24.dp))
-            
+            // Session indicator — tap to change mode/member
+            val activeMemberName = members.find { it.id == sessionMemberId }?.name
+            SessionCard(
+                mode = sessionMode,
+                memberName = activeMemberName,
+                onClick = { viewModel.showSessionDialog() }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Quick Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -179,6 +192,20 @@ fun HomeScreen(
         )
     }
     
+    // Session mode dialog
+    if (uiState.showSessionDialog) {
+        SessionSetupDialog(
+            currentMode = sessionMode,
+            currentMemberId = sessionMemberId,
+            members = members,
+            onConfirm = { mode, memberId ->
+                viewModel.setSession(mode, memberId)
+                viewModel.hideSessionDialog()
+            },
+            onDismiss = { viewModel.hideSessionDialog() }
+        )
+    }
+
     // Concert Mode setup dialog
     if (uiState.showConcertModeDialog) {
         val concertSetlists by viewModel.concertSetlists.collectAsState()
@@ -582,6 +609,158 @@ fun ConcertModeSetupDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
+        }
+    )
+}
+
+@Composable
+private fun SessionCard(
+    mode: AppMode,
+    memberName: String?,
+    onClick: () -> Unit
+) {
+    val (icon, label, description) = when (mode) {
+        AppMode.ADMIN     -> Triple(Icons.Default.AdminPanelSettings, "Admin",
+                                    "Full library access — managing songs and shared layers")
+        AppMode.PERFORMER -> Triple(Icons.Default.MusicNote, "Performer",
+                                    memberName?.let { "As $it — personal layers only" }
+                                        ?: "No member selected")
+        AppMode.CONDUCTOR -> Triple(Icons.Default.Visibility, "Conductor",
+                                    memberName?.let { "As $it — all layers visible" }
+                                        ?: "No member selected")
+    }
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(28.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = "Change mode",
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionSetupDialog(
+    currentMode: AppMode,
+    currentMemberId: String?,
+    members: List<Member>,
+    onConfirm: (AppMode, String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedMode by remember { mutableStateOf(currentMode) }
+    var selectedMemberId by remember { mutableStateOf(currentMemberId) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose your mode") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Mode",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AppMode.entries.forEach { mode ->
+                    val (icon, label, hint) = when (mode) {
+                        AppMode.ADMIN     -> Triple(Icons.Default.AdminPanelSettings, "Admin",
+                                                    "Manage songs, files and shared annotations")
+                        AppMode.PERFORMER -> Triple(Icons.Default.MusicNote, "Performer",
+                                                    "Edit your own layers, view shared layers")
+                        AppMode.CONDUCTOR -> Triple(Icons.Default.Visibility, "Conductor",
+                                                    "View all layers, share your annotations with the band")
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedMode = mode }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RadioButton(
+                            selected = selectedMode == mode,
+                            onClick = { selectedMode = mode }
+                        )
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Column {
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                            Text(hint, style = MaterialTheme.typography.labelSmall,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                if (selectedMode != AppMode.ADMIN && members.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text(
+                        "As member",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    members.forEach { member ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedMemberId = member.id }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedMemberId == member.id,
+                                onClick = { selectedMemberId = member.id }
+                            )
+                            Text(
+                                member.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val memberId = if (selectedMode == AppMode.ADMIN) null else selectedMemberId
+                    onConfirm(selectedMode, memberId)
+                },
+                enabled = selectedMode == AppMode.ADMIN || selectedMemberId != null
+            ) { Text("Apply") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

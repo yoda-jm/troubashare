@@ -16,7 +16,9 @@ data class AnnotationLayer(
     val ownerId: String,
     val colorIndex: Int = 0,
     val displayOrder: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** True when the owner has broadcast this layer so all members can see it read-only. */
+    val isPromoted: Boolean = false
 ) {
     val isShared: Boolean get() = ownerId == SHARED_ANNOTATION_LAYER
 }

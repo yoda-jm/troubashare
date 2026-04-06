@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.domain.model.AnnotationLayer
+import com.troubashare.domain.model.AppMode
 import com.troubashare.domain.model.SongFile
 import com.troubashare.ui.components.AnnotatableFileViewer
 import kotlinx.coroutines.launch
@@ -54,6 +55,7 @@ fun FileViewerScreen(
     val activeLayer by viewModel.activeLayer.collectAsState()
     val hiddenLayerIds by viewModel.hiddenLayerIds.collectAsState()
     val isFileLevelView = viewModel.isFileLevelView
+    val viewerMode by viewModel.viewerMode.collectAsState()
 
     var showLayerSheet by remember { mutableStateOf(false) }
 
@@ -73,7 +75,7 @@ fun FileViewerScreen(
             layers = layers,
             activeLayerId = activeLayerId,
             hiddenLayerIds = hiddenLayerIds,
-            isFileLevelView = isFileLevelView,
+            viewerMode = viewerMode,
             viewModel = viewModel,
             onDismiss = { showLayerSheet = false }
         )
@@ -211,7 +213,7 @@ private fun LayerManagementSheet(
     layers: List<AnnotationLayer>,
     activeLayerId: String?,
     hiddenLayerIds: Set<String>,
-    isFileLevelView: Boolean,
+    viewerMode: AppMode,
     viewModel: FileViewerViewModel,
     onDismiss: () -> Unit
 ) {
@@ -280,6 +282,8 @@ private fun LayerManagementSheet(
                             isActive = isActive,
                             isVisible = isVisible,
                             canEdit = canEdit,
+                            canPromote = canEdit && !layer.isShared &&
+                                         viewerMode == AppMode.CONDUCTOR,
                             color = color,
                             strokeCount = strokeCount,
                             onSelect = {
@@ -287,6 +291,7 @@ private fun LayerManagementSheet(
                                 dismissSheet()
                             },
                             onToggleVisible = { viewModel.toggleLayerVisible(layer.id) },
+                            onTogglePromote = { viewModel.promoteLayer(layer.id, !layer.isPromoted) },
                             onRename = { renameTarget = layer },
                             onDelete = { deleteTarget = layer }
                         )
@@ -351,10 +356,12 @@ private fun LayerRow(
     isActive: Boolean,
     isVisible: Boolean,
     canEdit: Boolean,
+    canPromote: Boolean,
     color: Color,
     strokeCount: Int,
     onSelect: () -> Unit,
     onToggleVisible: () -> Unit,
+    onTogglePromote: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -374,9 +381,14 @@ private fun LayerRow(
             )
         }
 
-        // Layer icon (shared vs personal)
+        // Layer type icon: group / broadcast (promoted) / personal
+        val layerIcon = when {
+            layer.isShared    -> Icons.Default.Group
+            layer.isPromoted  -> Icons.Default.Campaign
+            else              -> Icons.Default.Person
+        }
         Icon(
-            imageVector = if (layer.isShared) Icons.Default.Group else Icons.Default.Person,
+            imageVector = layerIcon,
             contentDescription = null,
             tint = color,
             modifier = Modifier.size(18.dp)
@@ -434,6 +446,18 @@ private fun LayerRow(
 
         // Edit actions (only for writable layers)
         if (canEdit) {
+            // "Share with band" toggle — only shown in Conductor mode for own layers
+            if (canPromote) {
+                IconButton(onClick = onTogglePromote, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Campaign,
+                        contentDescription = if (layer.isPromoted) "Shared with band" else "Share with band",
+                        tint = if (layer.isPromoted) MaterialTheme.colorScheme.tertiary
+                               else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             IconButton(onClick = onRename, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Default.Edit, contentDescription = "Rename", modifier = Modifier.size(18.dp))
             }

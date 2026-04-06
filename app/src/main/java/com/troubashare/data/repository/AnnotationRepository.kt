@@ -54,6 +54,10 @@ class AnnotationRepository(
         return entity.toDomain()
     }
 
+    suspend fun setLayerPromoted(layerId: String, promoted: Boolean) {
+        layerDao.setPromoted(layerId, promoted)
+    }
+
     suspend fun renameLayer(layerId: String, name: String) {
         val entity = layerDao.getLayerById(layerId) ?: return
         layerDao.updateLayer(entity.copy(name = name))
@@ -312,5 +316,6 @@ private fun AnnotationLayerEntity.toDomain() = AnnotationLayer(
     ownerId = ownerId,
     colorIndex = colorIndex,
     displayOrder = displayOrder,
-    createdAt = createdAt
+    createdAt = createdAt,
+    isPromoted = isPromoted
 )

@@ -20,6 +20,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.troubashare.domain.model.AnnotationLayer
 import com.troubashare.domain.model.SongFile
 import com.troubashare.ui.components.AnnotatableFileViewer
+import kotlinx.coroutines.launch
 
 /** Fixed colour palette for layer indicators (index matches AnnotationLayer.colorIndex). */
 val LAYER_COLORS: List<Color> = listOf(
@@ -147,9 +148,9 @@ fun FileViewerScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = activeColor
                         )
-                        if (!isFileLevelView) {
+                        if (!isFileLevelView && activeLayer?.isShared == true) {
                             Text(
-                                text = "(group layer is read-only)",
+                                text = "(read-only)",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = activeColor.copy(alpha = 0.7f)
                             )
@@ -221,7 +222,17 @@ private fun LayerManagementSheet(
     var renameTarget by remember { mutableStateOf<AnnotationLayer?>(null) }
     var deleteTarget by remember { mutableStateOf<AnnotationLayer?>(null) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    // Properly hide sheet with animation before removing from composition
+    fun dismissSheet() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            if (!sheetState.isVisible) onDismiss()
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -265,7 +276,7 @@ private fun LayerManagementSheet(
                             color = color,
                             onSelect = {
                                 viewModel.setActiveLayer(layer.id)
-                                onDismiss()
+                                dismissSheet()
                             },
                             onToggleVisible = { viewModel.toggleLayerVisible(layer.id) },
                             onRename = { renameTarget = layer },
@@ -285,7 +296,7 @@ private fun LayerManagementSheet(
             onConfirm = { name ->
                 viewModel.createLayer(name)
                 showAddDialog = false
-                onDismiss()
+                dismissSheet()
             },
             onDismiss = { showAddDialog = false }
         )

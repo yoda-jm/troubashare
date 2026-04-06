@@ -96,11 +96,32 @@ class AnnotationPreferencesManager(context: Context) {
         val json = prefs.getString("layer_preferences", null) ?: return mutableMapOf()
         return try {
             val type = object : TypeToken<MutableMap<String, AnnotationLayerPreferences>>() {}.type
-            gson.fromJson(json, type) ?: mutableMapOf()
+            val loaded: MutableMap<String, AnnotationLayerPreferences> =
+                gson.fromJson(json, type) ?: return mutableMapOf()
+            // Gson ignores Kotlin default values and can set non-null fields to null.
+            // Sanitize after deserialization to avoid NPE in .copy() calls.
+            loaded.mapValuesTo(mutableMapOf()) { (_, pref) -> pref.sanitized() }
         } catch (e: Exception) {
             mutableMapOf()
         }
     }
+
+    /**
+     * Fixes up fields that Gson may have deserialized as null despite non-null Kotlin types.
+     * Creates a new instance manually to avoid .copy() NPE (copy passes nulls to non-null params).
+     */
+    @Suppress("SENSELESS_COMPARISON")
+    private fun AnnotationLayerPreferences.sanitized() = AnnotationLayerPreferences(
+        fileId = fileId ?: "",
+        memberId = memberId ?: "",
+        useScrollMode = useScrollMode,
+        hiddenLayerIds = if (hiddenLayerIds == null) emptySet() else hiddenLayerIds,
+        activeLayerId = activeLayerId,
+        showInConcert = showInConcert,
+        showSharedLayer = showSharedLayer,
+        activeLayerIsShared = activeLayerIsShared,
+        layerName = layerName
+    )
 
     private fun saveAnnotationLayerPreferences(preferences: Map<String, AnnotationLayerPreferences>) {
         val json = gson.toJson(preferences)

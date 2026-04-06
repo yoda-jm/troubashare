@@ -64,6 +64,19 @@ interface AnnotationDao {
     @Query("DELETE FROM annotations WHERE fileId = :fileId")
     suspend fun deleteAnnotationsByFile(fileId: String)
 
+    // Layer-based queries
+    @Query("SELECT * FROM annotations WHERE layerId = :layerId ORDER BY pageNumber")
+    fun getAnnotationsByLayer(layerId: String): Flow<List<AnnotationEntity>>
+
+    @Query("SELECT * FROM annotations WHERE layerId IN (:layerIds) ORDER BY pageNumber")
+    fun getAnnotationsByLayers(layerIds: List<String>): Flow<List<AnnotationEntity>>
+
+    @Query("SELECT * FROM annotations WHERE layerId IN (:layerIds) ORDER BY pageNumber")
+    suspend fun getAnnotationsByLayersOnce(layerIds: List<String>): List<AnnotationEntity>
+
+    @Query("DELETE FROM annotations WHERE layerId = :layerId")
+    suspend fun deleteAnnotationsByLayer(layerId: String)
+
     // Stroke CRUD
     @Query("SELECT * FROM annotation_strokes WHERE annotationId = :annotationId ORDER BY createdAt")
     suspend fun getStrokesByAnnotation(annotationId: String): List<AnnotationStrokeEntity>

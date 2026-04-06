@@ -27,6 +27,7 @@ data class AnnotationEntity(
     @PrimaryKey val id: String,
     val fileId: String,
     val memberId: String,
+    val layerId: String = "",       // references annotation_layers.id; "" = legacy row
     val pageNumber: Int = 0,
     val scope: String = "PERSONAL", // AnnotationScope.name
     val partId: String? = null,     // only when scope = PART

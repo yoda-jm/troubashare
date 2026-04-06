@@ -346,27 +346,28 @@ fun ConcertModeScreen(
                             val page = concertPages[pageIndex]
                             val file = page.file
 
-                            // Load annotations for this file — personal + shared layers,
-                            // respecting the visibility prefs the member set in song editing.
-                            val prefsForFile = remember(file.id, memberId) {
+                            // Load annotations for this file respecting per-member layer prefs.
+                            val prefsManager = remember {
                                 com.troubashare.data.preferences.AnnotationPreferencesManager(context)
                             }
-                            val showPersonal = remember(file.id, memberId) {
-                                prefsForFile.getAnnotationLayerVisibility(file.id, memberId)
+                            // Determine which layers this member can see and hasn't hidden
+                            val visibleLayerIds = remember(file.id, memberId) {
+                                mutableStateOf<List<String>>(emptyList())
                             }
-                            val showShared = remember(file.id, memberId) {
-                                prefsForFile.getSharedLayerVisible(file.id, memberId)
+                            LaunchedEffect(file.id, memberId) {
+                                val allLayers = viewModel.getLayersForFileOnce(file.id)
+                                val hidden = prefsManager.getHiddenLayerIds(file.id, memberId)
+                                // Member sees their personal layers + shared layers, minus hidden
+                                visibleLayerIds.value = allLayers
+                                    .filter { layer ->
+                                        (layer.ownerId == memberId || layer.isShared) &&
+                                        layer.id !in hidden
+                                    }
+                                    .map { it.id }
                             }
-                            val personalAnnotations by remember(file.id, memberId) {
-                                viewModel.getAnnotationsForFile(file.id, memberId)
+                            val annotations by remember(visibleLayerIds.value) {
+                                viewModel.getAnnotationsForLayers(visibleLayerIds.value)
                             }.collectAsState(initial = emptyList())
-                            val sharedAnnotations by remember(file.id) {
-                                viewModel.getSharedAnnotationsForFile(file.id)
-                            }.collectAsState(initial = emptyList())
-                            val annotations = remember(personalAnnotations, sharedAnnotations, showPersonal, showShared) {
-                                (if (showPersonal) personalAnnotations else emptyList()) +
-                                (if (showShared) sharedAnnotations else emptyList())
-                            }
 
                             Box(
                                 modifier = Modifier.fillMaxSize(),

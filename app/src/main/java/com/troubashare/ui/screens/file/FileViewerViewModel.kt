@@ -9,6 +9,7 @@ import com.troubashare.data.repository.AnnotationRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.preferences.AnnotationPreferencesManager
 import com.troubashare.domain.model.Annotation as DomainAnnotation
+import com.troubashare.domain.model.AnnotationLayer
 import com.troubashare.domain.model.AnnotationStroke
 import com.troubashare.domain.model.AnnotationPoint
 import com.troubashare.domain.model.DrawingState
@@ -51,6 +52,9 @@ class FileViewerViewModel @Inject constructor(
     private val fileResolver = FileResolver(songRepository, fileId, memberId, songId, filePath)
     private val preferencesManager = AnnotationPreferencesManager(context)
 
+    /** True when opened from the file pool (no specific member) — shared layers only. */
+    val isFileLevelView: Boolean = memberId.isBlank()
+
     private val _uiState = MutableStateFlow(FileViewerUiState())
     val uiState: StateFlow<FileViewerUiState> = _uiState.asStateFlow()
 
@@ -69,15 +73,33 @@ class FileViewerViewModel @Inject constructor(
     private val _annotations = MutableStateFlow<List<DomainAnnotation>>(emptyList())
     val annotations: StateFlow<List<DomainAnnotation>> = _annotations.asStateFlow()
 
-    // Layer state — initialised from persisted preferences after fileResolver is ready
-    private val _activeLayerIsShared = MutableStateFlow(false)
-    val activeLayerIsShared: StateFlow<Boolean> = _activeLayerIsShared.asStateFlow()
+    // ── Layer state ──────────────────────────────────────────────────────────
 
-    private val _showPersonalLayer = MutableStateFlow(true)
-    val showPersonalLayer: StateFlow<Boolean> = _showPersonalLayer.asStateFlow()
+    /** All layers visible to this viewer (shared + personal where applicable). */
+    private val _layers = MutableStateFlow<List<AnnotationLayer>>(emptyList())
+    val layers: StateFlow<List<AnnotationLayer>> = _layers.asStateFlow()
 
-    private val _showSharedLayer = MutableStateFlow(true)
-    val showSharedLayer: StateFlow<Boolean> = _showSharedLayer.asStateFlow()
+    /** ID of the layer currently being drawn on. */
+    private val _activeLayerId = MutableStateFlow<String?>(null)
+    val activeLayerId: StateFlow<String?> = _activeLayerId.asStateFlow()
+
+    /** Layer IDs the viewer has hidden. */
+    private val _hiddenLayerIds = MutableStateFlow<Set<String>>(emptySet())
+    val hiddenLayerIds: StateFlow<Set<String>> = _hiddenLayerIds.asStateFlow()
+
+    val activeLayer: StateFlow<AnnotationLayer?> = combine(_layers, _activeLayerId) { layers, activeId ->
+        layers.find { it.id == activeId }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // ── Derived: visible annotations on the current page ────────────────────
+
+    val currentPageAnnotations = combine(
+        _annotations, _currentPage, _hiddenLayerIds
+    ) { annotationList, page, hidden ->
+        annotationList.filter { ann ->
+            ann.pageNumber == page && ann.layerId !in hidden
+        }
+    }.stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList())
 
     private val saveManager = AnnotationSaveManager(
         annotationRepository = annotationRepository,
@@ -86,79 +108,159 @@ class FileViewerViewModel @Inject constructor(
         onError = { msg -> _uiState.value = _uiState.value.copy(errorMessage = msg) }
     )
 
-    val currentPageAnnotations = combine(
-        _annotations, _currentPage, _showPersonalLayer, _showSharedLayer
-    ) { annotationList, page, showPersonal, showShared ->
-        val effectiveMemberId = fileResolver.getEffectiveMemberId()
-        annotationList.filter { annotation ->
-            annotation.pageNumber == page && when (annotation.memberId) {
-                effectiveMemberId -> showPersonal
-                SHARED_LAYER_ID   -> showShared
-                else              -> false
-            }
-        }
-    }.stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList())
-
     init {
-        // If fileId is blank (old-style navigation without IDs), resolve from path
         if (fileId.isBlank() && filePath.isNotBlank()) {
             viewModelScope.launch {
                 fileResolver.resolveFromPath()
-                restoreLayerPreferences()
-                loadAnnotations()
+                loadLayersAndAnnotations()
             }
         } else {
-            // IDs are already available from navigation args
-            restoreLayerPreferences()
-            loadAnnotations()
+            loadLayersAndAnnotations()
         }
     }
 
-    /** True when opened from the file pool (no specific member) — shared layer only. */
-    val isFileLevelView: Boolean = memberId.isBlank()
+    // ── Layer loading ────────────────────────────────────────────────────────
 
-    private fun restoreLayerPreferences() {
+    private fun loadLayersAndAnnotations() {
         val fid = fileResolver.getEffectiveFileId()
         val mid = fileResolver.getEffectiveMemberId()
-        if (isFileLevelView) {
-            // Pool view: always draw on shared layer; personal layer irrelevant
-            _activeLayerIsShared.value = true
-            _showPersonalLayer.value   = false
-            _showSharedLayer.value     = true
-        } else {
-            // Member view: always draw on personal; shared is opt-in read-only
-            _activeLayerIsShared.value = false
-            _showPersonalLayer.value   = preferencesManager.getAnnotationLayerVisibility(fid, mid)
-            _showSharedLayer.value     = preferencesManager.getSharedLayerVisible(fid, mid)
+
+        // Restore hidden-layer prefs
+        _hiddenLayerIds.value = preferencesManager.getHiddenLayerIds(fid, mid)
+
+        viewModelScope.launch {
+            // Observe layers. When the layer list changes (add/rename/delete),
+            // flatMapLatest cancels the previous annotation Flow and starts a new one.
+            annotationRepository.getLayersForFile(fid)
+                .flatMapLatest { allLayers ->
+                    // Filter to layers this viewer can see
+                    val viewerLayers = allLayers.filter { layer ->
+                        if (isFileLevelView) layer.isShared
+                        else layer.ownerId == mid || layer.isShared
+                    }
+                    _layers.value = viewerLayers
+                    ensureValidActiveLayer(viewerLayers)
+
+                    val layerIds = viewerLayers.map { it.id }
+                    annotationRepository.getAnnotationsByLayers(layerIds)
+                }
+                .collect { annotations ->
+                    _annotations.value = annotations
+                }
         }
     }
 
-    fun setActiveLayerShared(isShared: Boolean) {
-        // Only allowed at file-pool level; member view always draws personal
-        if (!isFileLevelView) return
-        _activeLayerIsShared.value = isShared
-        preferencesManager.setActiveLayerIsShared(
-            fileResolver.getEffectiveFileId(), fileResolver.getEffectiveMemberId(), isShared
+    /**
+     * Ensure [_activeLayerId] points to a valid writable layer.
+     * Priority: persisted pref > current in-memory value > first writable layer.
+     */
+    private fun ensureValidActiveLayer(viewerLayers: List<AnnotationLayer>) {
+        val fid = fileResolver.getEffectiveFileId()
+        val mid = fileResolver.getEffectiveMemberId()
+        val storedId = preferencesManager.getActiveLayerId(fid, mid)
+        val currentId = _activeLayerId.value
+
+        // A writable layer for this viewer
+        fun isWritable(layer: AnnotationLayer) =
+            if (isFileLevelView) layer.isShared else !layer.isShared
+
+        val best = viewerLayers.find { it.id == currentId && isWritable(it) }
+            ?: viewerLayers.find { it.id == storedId && isWritable(it) }
+            ?: viewerLayers.firstOrNull { isWritable(it) }
+
+        if (best != null && _activeLayerId.value != best.id) {
+            _activeLayerId.value = best.id
+        }
+    }
+
+    // ── Layer management ─────────────────────────────────────────────────────
+
+    fun setActiveLayer(layerId: String) {
+        val layer = _layers.value.find { it.id == layerId } ?: return
+        // Only writable layers can be active
+        if (isFileLevelView && !layer.isShared) return
+        if (!isFileLevelView && layer.isShared) return
+        _activeLayerId.value = layerId
+        preferencesManager.setActiveLayerId(
+            fileResolver.getEffectiveFileId(), fileResolver.getEffectiveMemberId(), layerId
         )
     }
 
-    fun setPersonalLayerVisible(visible: Boolean) {
-        _showPersonalLayer.value = visible
-        preferencesManager.setAnnotationLayerVisibility(
-            fileResolver.getEffectiveFileId(), fileResolver.getEffectiveMemberId(), visible
+    fun toggleLayerVisible(layerId: String) {
+        val hidden = _hiddenLayerIds.value
+        val nowHidden = layerId !in hidden
+        _hiddenLayerIds.value = if (nowHidden) hidden + layerId else hidden - layerId
+        preferencesManager.setLayerHidden(
+            fileResolver.getEffectiveFileId(),
+            fileResolver.getEffectiveMemberId(),
+            layerId,
+            nowHidden
         )
     }
 
-    fun setSharedLayerVisible(visible: Boolean) {
-        _showSharedLayer.value = visible
-        preferencesManager.setSharedLayerVisible(
-            fileResolver.getEffectiveFileId(), fileResolver.getEffectiveMemberId(), visible
-        )
+    fun createLayer(name: String) {
+        val fid = fileResolver.getEffectiveFileId()
+        val ownerId = if (isFileLevelView) SHARED_ANNOTATION_LAYER
+                      else fileResolver.getEffectiveMemberId()
+        val existingCount = _layers.value.count { it.ownerId == ownerId }
+        viewModelScope.launch {
+            try {
+                val newLayer = annotationRepository.createLayer(
+                    fileId = fid,
+                    name = name,
+                    ownerId = ownerId,
+                    colorIndex = existingCount % LAYER_COLOR_COUNT,
+                    displayOrder = existingCount
+                )
+                _activeLayerId.value = newLayer.id
+                preferencesManager.setActiveLayerId(fid, fileResolver.getEffectiveMemberId(), newLayer.id)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = "Failed to create layer: ${e.message}")
+            }
+        }
     }
 
-    companion object {
-        val SHARED_LAYER_ID = SHARED_ANNOTATION_LAYER
+    fun renameLayer(layerId: String, newName: String) {
+        if (!canEditLayer(layerId)) return
+        viewModelScope.launch {
+            try {
+                annotationRepository.renameLayer(layerId, newName)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = "Failed to rename layer: ${e.message}")
+            }
+        }
     }
+
+    fun deleteLayer(layerId: String) {
+        if (!canEditLayer(layerId)) return
+        // Don't delete the last writable layer
+        val writableLayers = _layers.value.filter { layer ->
+            if (isFileLevelView) layer.isShared else !layer.isShared
+        }
+        if (writableLayers.size <= 1) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Cannot delete the last layer.")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                annotationRepository.deleteLayer(layerId)
+                if (_activeLayerId.value == layerId) {
+                    val next = _layers.value.firstOrNull { it.id != layerId && canEditLayer(it.id) }
+                    _activeLayerId.value = next?.id
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = "Failed to delete layer: ${e.message}")
+            }
+        }
+    }
+
+    /** True if this viewer can rename/delete the given layer. */
+    fun canEditLayer(layerId: String): Boolean {
+        val layer = _layers.value.find { it.id == layerId } ?: return false
+        return if (isFileLevelView) layer.isShared else !layer.isShared
+    }
+
+    // ── Page navigation ──────────────────────────────────────────────────────
 
     fun setCurrentPage(page: Int) {
         _currentPage.value = page
@@ -166,6 +268,8 @@ class FileViewerViewModel @Inject constructor(
             _drawingState.value = _drawingState.value.copy(selectedStroke = null)
         }
     }
+
+    // ── Drawing mode ─────────────────────────────────────────────────────────
 
     fun toggleDrawingMode() {
         val newIsDrawing = !_drawingState.value.isDrawing
@@ -195,6 +299,8 @@ class FileViewerViewModel @Inject constructor(
         }
     }
 
+    // ── Stroke operations ────────────────────────────────────────────────────
+
     fun addTextAnnotation(text: String, position: androidx.compose.ui.geometry.Offset) {
         if (text.isNotBlank()) {
             val stroke = AnnotationStroke(
@@ -219,20 +325,19 @@ class FileViewerViewModel @Inject constructor(
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true)
 
+                val activeLayerVal = _layers.value.find { it.id == _activeLayerId.value }
+                    ?: return@launch  // no active layer yet (layers still loading)
+
                 val currentPageValue = _currentPage.value
-                // isFileLevelView is the authoritative gate: pool view ALWAYS writes shared.
-                // _activeLayerIsShared may still be false during the first frame if
-                // restoreLayerPreferences() hasn't finished, so we double-guard here.
-                val layerMemberId = if (isFileLevelView || _activeLayerIsShared.value) SHARED_LAYER_ID
-                                    else fileResolver.getEffectiveMemberId()
                 var annotation = _annotations.value.find {
-                    it.pageNumber == currentPageValue && it.memberId == layerMemberId
+                    it.pageNumber == currentPageValue && it.layerId == activeLayerVal.id
                 }
 
                 if (annotation == null) {
                     annotation = annotationRepository.createAnnotation(
                         fileId = fileResolver.getEffectiveFileId(),
-                        memberId = layerMemberId,
+                        memberId = activeLayerVal.ownerId,
+                        layerId = activeLayerVal.id,
                         pageNumber = currentPageValue
                     )
                     _annotations.value = _annotations.value + annotation
@@ -243,9 +348,8 @@ class FileViewerViewModel @Inject constructor(
                     if (ann.id == annotation.id) updatedAnnotation else ann
                 }
 
-                // Save immediately (no debounce) so the DB is always current.
-                // This ensures the stroke is visible when opening from another context
-                // (e.g. member view) and ensures Room Flow observers see correct counts.
+                // Save immediately — ensures DB is current for other viewers and
+                // triggers Room Flow observers with the correct stroke count.
                 annotationRepository.saveAnnotationWithStrokes(updatedAnnotation)
 
             } catch (e: Exception) {
@@ -260,11 +364,11 @@ class FileViewerViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true)
+                val activeLayerVal = _layers.value.find { it.id == _activeLayerId.value }
+                    ?: return@launch
                 val currentPageValue = _currentPage.value
-                val layerMemberId = if (isFileLevelView || _activeLayerIsShared.value) SHARED_LAYER_ID
-                                    else fileResolver.getEffectiveMemberId()
                 _annotations.value = _annotations.value.filter {
-                    !(it.pageNumber == currentPageValue && it.memberId == layerMemberId)
+                    !(it.pageNumber == currentPageValue && it.layerId == activeLayerVal.id)
                 }
                 saveManager.markDirty()
             } catch (e: Exception) {
@@ -286,9 +390,7 @@ class FileViewerViewModel @Inject constructor(
                 _annotations.value = _annotations.value.map { annotation ->
                     if (annotation.strokes.any { it.id == stroke.id }) {
                         annotation.copy(strokes = annotation.strokes.filter { it.id != stroke.id })
-                    } else {
-                        annotation
-                    }
+                    } else annotation
                 }
                 saveManager.markDirty()
             } catch (e: Exception) {
@@ -302,15 +404,11 @@ class FileViewerViewModel @Inject constructor(
     fun updateStroke(oldStroke: AnnotationStroke, newStroke: AnnotationStroke) {
         val annotation = _annotations.value.find { ann -> ann.strokes.any { it.id == oldStroke.id } }
             ?: return
-
         _annotations.value = _annotations.value.map { ann ->
             if (ann.id == annotation.id) {
                 ann.copy(strokes = ann.strokes.map { if (it.id == oldStroke.id) newStroke else it })
-            } else {
-                ann
-            }
+            } else ann
         }
-
         saveManager.markDirty()
     }
 
@@ -318,22 +416,140 @@ class FileViewerViewModel @Inject constructor(
         _drawingState.value = _drawingState.value.copy(tool = DrawingTool.SELECT)
     }
 
+    // ── Save / export ────────────────────────────────────────────────────────
+
+    fun saveAnnotationsNow() {
+        saveManager.saveNow()
+        viewModelScope.launch(NonCancellable) {
+            saveAnnotationLayerSilent()
+        }
+    }
+
+    fun saveAnnotationLayer() {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+
+                val annotations = _annotations.value
+                val totalStrokes = annotations.sumOf { it.strokes.size }
+
+                if (annotations.isEmpty() || totalStrokes == 0) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "No annotations found to save. Draw something first."
+                    )
+                    return@launch
+                }
+
+                val effectiveSongId = fileResolver.getEffectiveSongId()
+                if (effectiveSongId.isBlank()) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "✅ Annotations saved ($totalStrokes strokes) but cannot export (missing song link)."
+                    )
+                    return@launch
+                }
+
+                val gson = Gson()
+                val jsonContent = gson.toJson(mapOf(
+                    "fileId" to fileResolver.getEffectiveFileId(),
+                    "annotations" to annotations,
+                    "createdAt" to System.currentTimeMillis(),
+                    "version" to "2.0"
+                ))
+
+                val song = songRepository.getSongById(effectiveSongId)
+                val effectiveFileId = fileResolver.getEffectiveFileId()
+                val existingAnnotationFile = song?.files?.find { f ->
+                    f.fileType == FileType.ANNOTATION &&
+                    f.fileName.startsWith("annotations_${effectiveFileId}_")
+                }
+                val isUpdate = existingAnnotationFile != null
+
+                val fileName = "annotations_${effectiveFileId}_${System.currentTimeMillis()}.json"
+                val result = songRepository.addFileToSong(
+                    songId = effectiveSongId,
+                    uploadedBy = fileResolver.getEffectiveMemberId(),
+                    fileName = fileName,
+                    inputStream = ByteArrayInputStream(jsonContent.toByteArray()),
+                    autoSelectForMember = null
+                )
+
+                if (result.isSuccess) {
+                    if (existingAnnotationFile != null) {
+                        songRepository.removeFileFromSong(existingAnnotationFile, cleanupAnnotations = false)
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "✅ Annotation layer ${if (isUpdate) "updated" else "saved"} ($totalStrokes strokes)"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "Failed to save annotation layer: ${result.exceptionOrNull()?.message}"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Failed to save annotation layer: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun saveAnnotationLayerSilent() {
+        try {
+            val effectiveSongId = fileResolver.getEffectiveSongId()
+            if (effectiveSongId.isBlank()) return
+            val song = songRepository.getSongById(effectiveSongId) ?: return
+            val gson = Gson()
+            val effectiveFileId = fileResolver.getEffectiveFileId()
+
+            val annotationsByLayer = _annotations.value.groupBy { it.layerId }
+            for ((layerId, layerAnnotations) in annotationsByLayer) {
+                if (layerAnnotations.sumOf { it.strokes.size } == 0) continue
+                val ownerId = _layers.value.find { it.id == layerId }?.ownerId ?: continue
+
+                val jsonContent = gson.toJson(mapOf(
+                    "fileId" to effectiveFileId,
+                    "layerId" to layerId,
+                    "ownerId" to ownerId,
+                    "annotations" to layerAnnotations,
+                    "createdAt" to System.currentTimeMillis(),
+                    "version" to "2.0"
+                ))
+
+                val existing = song.files.find { f ->
+                    f.fileType == FileType.ANNOTATION &&
+                    f.fileName.startsWith("annotations_${effectiveFileId}_${layerId}_")
+                }
+                val fileName = "annotations_${effectiveFileId}_${layerId}_${System.currentTimeMillis()}.json"
+                val result = songRepository.addFileToSong(
+                    songId = effectiveSongId,
+                    uploadedBy = ownerId,
+                    fileName = fileName,
+                    inputStream = ByteArrayInputStream(jsonContent.toByteArray()),
+                    autoSelectForMember = null
+                )
+                if (result.isSuccess && existing != null) {
+                    songRepository.removeFileFromSong(existing, cleanupAnnotations = false)
+                }
+            }
+        } catch (_: Exception) { /* silent on exit */ }
+    }
+
+    // ── PDF export ───────────────────────────────────────────────────────────
+
     suspend fun saveAnnotationsAsPdf(originalFilePath: String, outputFilePath: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val annotations = _annotations.value
                 val pdfDocument = PdfDocument()
-
                 for (page in 0 until 1) {
                     val pageInfo = PdfDocument.PageInfo.Builder(612, 792, page + 1).create()
                     val pdfPage = pdfDocument.startPage(pageInfo)
                     drawAnnotationsOnCanvas(pdfPage.canvas, annotations.filter { it.pageNumber == page })
                     pdfDocument.finishPage(pdfPage)
                 }
-
-                FileOutputStream(File(outputFilePath)).use { fos ->
-                    pdfDocument.writeTo(fos)
-                }
+                FileOutputStream(File(outputFilePath)).use { fos -> pdfDocument.writeTo(fos) }
                 pdfDocument.close()
                 true
             } catch (e: Exception) {
@@ -397,163 +613,10 @@ class FileViewerViewModel @Inject constructor(
         return path
     }
 
-    fun saveAnnotationLayer() {
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isLoading = true)
-
-                val annotations = _annotations.value
-                val totalStrokes = annotations.sumOf { it.strokes.size }
-
-                if (annotations.isEmpty() || totalStrokes == 0) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = "No annotations found to save. Draw something first."
-                    )
-                    return@launch
-                }
-
-                val effectiveSongId = fileResolver.getEffectiveSongId()
-                if (effectiveSongId.isBlank()) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = "✅ SUCCESS: Annotations saved to database ($totalStrokes strokes) but cannot export file (missing song link). Try re-uploading the PDF."
-                    )
-                    return@launch
-                }
-
-                val gson = Gson()
-                val jsonContent = gson.toJson(mapOf(
-                    "fileId" to fileResolver.getEffectiveFileId(),
-                    "originalFileId" to fileId,
-                    "memberId" to fileResolver.getEffectiveMemberId(),
-                    "annotations" to annotations,
-                    "createdAt" to System.currentTimeMillis(),
-                    "version" to "1.0"
-                ))
-
-                val song = songRepository.getSongById(effectiveSongId)
-                val existingAnnotationFile = song?.files?.find { file ->
-                    file.fileType == FileType.ANNOTATION &&
-                    file.uploadedBy == fileResolver.getEffectiveMemberId() &&
-                    file.fileName.startsWith("annotations_${fileResolver.getEffectiveFileId()}_")
-                }
-                val isUpdate = existingAnnotationFile != null
-
-                val fileName = "annotations_${fileResolver.getEffectiveFileId()}_${fileResolver.getEffectiveMemberId()}_${System.currentTimeMillis()}.json"
-                val result = songRepository.addFileToSong(
-                    songId = effectiveSongId,
-                    uploadedBy = fileResolver.getEffectiveMemberId(),
-                    fileName = fileName,
-                    inputStream = ByteArrayInputStream(jsonContent.toByteArray()),
-                    autoSelectForMember = null  // annotation files don't need a selection
-                )
-
-                if (result.isSuccess) {
-                    if (existingAnnotationFile != null) {
-                        songRepository.removeFileFromSong(existingAnnotationFile, cleanupAnnotations = false)
-                    }
-                    val actionText = if (isUpdate) "updated" else "saved"
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = "✅ SUCCESS: Annotation layer $actionText as $fileName with $totalStrokes strokes"
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to save annotation layer: ${result.exceptionOrNull()?.message}"
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = "Failed to save annotation layer: ${e.message}")
-            }
-        }
-    }
-
-    private fun loadAnnotations() {
-        val effectiveFileId = fileResolver.getEffectiveFileId()
-        val effectiveMemberId = fileResolver.getEffectiveMemberId()
-
-        // Personal layer: load once (only this session writes personal annotations).
-        viewModelScope.launch {
-            try {
-                val personal = annotationRepository.getAnnotationsByFileAndMemberOnce(
-                    effectiveFileId, effectiveMemberId
-                )
-                _annotations.value = personal + _annotations.value.filter { it.memberId == SHARED_LAYER_ID }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = "Failed to load annotations: ${e.message}")
-            }
-        }
-
-        // Shared layer: observe live so any DB write (including from another session
-        // or from addStroke's immediate save) is instantly reflected here.
-        viewModelScope.launch {
-            try {
-                annotationRepository.getAnnotationsByFileAndMember(effectiveFileId, SHARED_LAYER_ID)
-                    .collect { sharedAnnotations ->
-                        // Keep all non-shared (personal/in-memory) annotations and replace shared.
-                        _annotations.value =
-                            _annotations.value.filter { it.memberId != SHARED_LAYER_ID } + sharedAnnotations
-                    }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = "Failed to observe shared annotations: ${e.message}")
-            }
-        }
-    }
-
-    fun saveAnnotationsNow() {
-        saveManager.saveNow()
-        // Also refresh the annotation layer file so the song detail indicator stays current.
-        // Uses NonCancellable so it completes even if viewModelScope is being torn down.
-        viewModelScope.launch(NonCancellable) {
-            saveAnnotationLayerSilent()
-        }
-    }
-
-    /** Like saveAnnotationLayer() but with no UI state updates — safe to call on exit. */
-    private suspend fun saveAnnotationLayerSilent() {
-        try {
-            val effectiveSongId = fileResolver.getEffectiveSongId()
-            if (effectiveSongId.isBlank()) return
-
-            val song = songRepository.getSongById(effectiveSongId) ?: return
-            val gson = Gson()
-            val effectiveFileId = fileResolver.getEffectiveFileId()
-
-            // Save each distinct layer (personal + shared) that has strokes
-            val annotationsByLayer = _annotations.value.groupBy { it.memberId }
-            for ((layerMemberId, layerAnnotations) in annotationsByLayer) {
-                if (layerAnnotations.sumOf { it.strokes.size } == 0) continue
-
-                val jsonContent = gson.toJson(mapOf(
-                    "fileId" to effectiveFileId,
-                    "memberId" to layerMemberId,
-                    "annotations" to layerAnnotations,
-                    "createdAt" to System.currentTimeMillis(),
-                    "version" to "1.0"
-                ))
-
-                val existing = song.files.find { f ->
-                    f.fileType == FileType.ANNOTATION &&
-                    f.uploadedBy == layerMemberId &&
-                    f.fileName.startsWith("annotations_${effectiveFileId}_")
-                }
-                val fileName = "annotations_${effectiveFileId}_${layerMemberId}_${System.currentTimeMillis()}.json"
-                val result = songRepository.addFileToSong(
-                    songId = effectiveSongId,
-                    uploadedBy = layerMemberId,
-                    fileName = fileName,
-                    inputStream = ByteArrayInputStream(jsonContent.toByteArray()),
-                    autoSelectForMember = null
-                )
-                if (result.isSuccess && existing != null) {
-                    songRepository.removeFileFromSong(existing, cleanupAnnotations = false)
-                }
-            }
-        } catch (e: Exception) {
-            // Silent on exit — no UI to show errors to
-        }
+    companion object {
+        /** Number of distinct layer colours in the UI palette. */
+        const val LAYER_COLOR_COUNT = 6
+        val SHARED_LAYER_ID = SHARED_ANNOTATION_LAYER
     }
 }
 

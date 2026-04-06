@@ -1,9 +1,9 @@
 package com.troubashare.di
 
 import android.content.Context
-import androidx.room.Room
 import com.troubashare.data.database.TroubaShareDatabase
 import com.troubashare.data.database.dao.*
+import com.troubashare.data.database.dao.AnnotationLayerDao
 import com.troubashare.data.repository.*
 import com.troubashare.data.file.FileManager
 import com.troubashare.data.sync.DeviceManager
@@ -24,13 +24,8 @@ object DatabaseModule {
     fun provideTroubaShareDatabase(
         @ApplicationContext context: Context
     ): TroubaShareDatabase {
-        return Room.databaseBuilder(
-            context.applicationContext,
-            TroubaShareDatabase::class.java,
-            TroubaShareDatabase.DATABASE_NAME
-        )
-        .fallbackToDestructiveMigration()
-        .build()
+        // Use getInstance so all migrations defined in TroubaShareDatabase are applied.
+        return TroubaShareDatabase.getInstance(context)
     }
 
     @Provides
@@ -50,6 +45,9 @@ object DatabaseModule {
 
     @Provides
     fun provideAnnotationDao(database: TroubaShareDatabase): AnnotationDao = database.annotationDao()
+
+    @Provides
+    fun provideAnnotationLayerDao(database: TroubaShareDatabase): AnnotationLayerDao = database.annotationLayerDao()
 
     @Provides
     fun provideChangeLogDao(database: TroubaShareDatabase): ChangeLogDao = database.changeLogDao()

@@ -81,8 +81,10 @@ class JsonlAnnotationImporter(
 
                 if (existing == null) {
                     // New stroke — add to annotation for this page
+                    // Use the deterministic default layerId (fileId_memberId) for imported data.
+                    val defaultLayerId = "${fileId}_${memberId}"
                     val annotation = annotationsPerPage[pageNumber]?.firstOrNull()
-                        ?: annotationRepository.createAnnotation(fileId, memberId, pageNumber, scope, partId)
+                        ?: annotationRepository.createAnnotation(fileId, memberId, defaultLayerId, pageNumber, scope, partId)
                     annotationRepository.addStrokeToAnnotation(annotation.id, remoteStroke)
                     added++
                 } else {

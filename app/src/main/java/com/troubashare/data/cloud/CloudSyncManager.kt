@@ -774,6 +774,7 @@ class CloudSyncManager @Inject constructor(
                                 val localAnnotation = annotationRepository.createAnnotation(
                                     fileId = fileId,
                                     memberId = memberId,
+                                    layerId = "${fileId}_${memberId}",
                                     pageNumber = annotationLayer.annotations.firstOrNull()?.pageNumber ?: 0
                                 )
 
@@ -1647,6 +1648,7 @@ class CloudSyncManager @Inject constructor(
                             val createdAnnotation = annotationRepository.createAnnotation(
                                 fileId = annotation.fileId,
                                 memberId = annotation.memberId,
+                                layerId = "${annotation.fileId}_${annotation.memberId}",
                                 pageNumber = annotation.pageNumber
                             )
                             

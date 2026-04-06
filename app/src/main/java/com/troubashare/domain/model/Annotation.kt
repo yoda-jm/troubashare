@@ -17,6 +17,7 @@ data class Annotation(
     val id: String,
     val fileId: String, // References SongFile.id
     val memberId: String,
+    val layerId: String = "",  // References AnnotationLayer.id; "" = legacy row
     val pageNumber: Int = 0,
     val scope: AnnotationScope = AnnotationScope.PERSONAL,
     val partId: String? = null, // only when scope = PART

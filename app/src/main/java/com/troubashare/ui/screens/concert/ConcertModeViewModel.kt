@@ -8,7 +8,6 @@ import com.troubashare.data.repository.SetlistRepository
 import com.troubashare.data.repository.SongRepository
 import com.troubashare.data.repository.GroupRepository
 import com.troubashare.domain.model.Annotation
-import com.troubashare.domain.model.SHARED_ANNOTATION_LAYER
 import com.troubashare.domain.model.SongFile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -24,13 +23,13 @@ class ConcertModeViewModel @Inject constructor(
     private val fileSelectionRepository: FileSelectionRepository
 ) : ViewModel() {
 
-    /** Personal annotations for a member. */
-    fun getAnnotationsForFile(fileId: String, memberId: String): Flow<List<Annotation>> =
-        annotationRepository.getAnnotationsByFileAndMember(fileId, memberId)
+    /** All annotations for a given set of layer IDs. */
+    fun getAnnotationsForLayers(layerIds: List<String>): Flow<List<Annotation>> =
+        annotationRepository.getAnnotationsByLayers(layerIds)
 
-    /** Shared (group) annotations for a file — the "_shared_" layer. */
-    fun getSharedAnnotationsForFile(fileId: String): Flow<List<Annotation>> =
-        annotationRepository.getAnnotationsByFileAndMember(fileId, SHARED_ANNOTATION_LAYER)
+    /** All layers defined for a file, as a one-shot snapshot. */
+    suspend fun getLayersForFileOnce(fileId: String) =
+        annotationRepository.getLayersForFileOnce(fileId)
 
     private val _uiState = MutableStateFlow(ConcertModeUiState())
     val uiState: StateFlow<ConcertModeUiState> = _uiState.asStateFlow()

@@ -8,107 +8,75 @@ import com.troubashare.domain.model.AnnotationLayerPreferences
 import androidx.core.content.edit
 
 class AnnotationPreferencesManager(context: Context) {
-    
+
     private val prefs: SharedPreferences = context.getSharedPreferences(
-        "annotation_preferences", 
+        "annotation_preferences",
         Context.MODE_PRIVATE
     )
-    
+
     private val gson = Gson()
-    
-    fun setAnnotationLayerVisibility(fileId: String, memberId: String, showInConcert: Boolean) {
+
+    // ── Layer visibility / active layer ──────────────────────────────────────
+
+    fun getHiddenLayerIds(fileId: String, viewerMemberId: String): Set<String> {
         val preferences = getAnnotationLayerPreferences()
-        val key = "${fileId}_${memberId}"
-        
-        val existingPref = preferences[key]
-        val updatedPref = existingPref?.copy(showInConcert = showInConcert)
-            ?: AnnotationLayerPreferences(
-                fileId = fileId,
-                memberId = memberId,
-                showInConcert = showInConcert
-            )
-        
-        preferences[key] = updatedPref
-        saveAnnotationLayerPreferences(preferences)
+        return preferences["${fileId}_${viewerMemberId}"]?.hiddenLayerIds ?: emptySet()
     }
-    
-    fun getAnnotationLayerVisibility(fileId: String, memberId: String): Boolean {
+
+    fun setLayerHidden(fileId: String, viewerMemberId: String, layerId: String, hidden: Boolean) {
+        val key = "${fileId}_${viewerMemberId}"
+        val prefs = getAnnotationLayerPreferences()
+        val pref = prefs[key] ?: AnnotationLayerPreferences(fileId, viewerMemberId)
+        val newHidden = if (hidden) pref.hiddenLayerIds + layerId
+                        else pref.hiddenLayerIds - layerId
+        prefs[key] = pref.copy(hiddenLayerIds = newHidden)
+        saveAnnotationLayerPreferences(prefs)
+    }
+
+    fun getActiveLayerId(fileId: String, viewerMemberId: String): String? {
         val preferences = getAnnotationLayerPreferences()
-        val key = "${fileId}_${memberId}"
-        return preferences[key]?.showInConcert ?: true // Default to visible
+        return preferences["${fileId}_${viewerMemberId}"]?.activeLayerId
     }
-    
-    fun setAnnotationLayerName(fileId: String, memberId: String, name: String?) {
-        val preferences = getAnnotationLayerPreferences()
-        val key = "${fileId}_${memberId}"
-        
-        val existingPref = preferences[key]
-        val updatedPref = existingPref?.copy(layerName = name)
-            ?: AnnotationLayerPreferences(
-                fileId = fileId,
-                memberId = memberId,
-                layerName = name
-            )
-        
-        preferences[key] = updatedPref
-        saveAnnotationLayerPreferences(preferences)
+
+    fun setActiveLayerId(fileId: String, viewerMemberId: String, layerId: String?) {
+        val key = "${fileId}_${viewerMemberId}"
+        val prefs = getAnnotationLayerPreferences()
+        val pref = prefs[key] ?: AnnotationLayerPreferences(fileId, viewerMemberId)
+        prefs[key] = pref.copy(activeLayerId = layerId)
+        saveAnnotationLayerPreferences(prefs)
     }
-    
-    fun getAnnotationLayerName(fileId: String, memberId: String): String? {
-        val preferences = getAnnotationLayerPreferences()
-        val key = "${fileId}_${memberId}"
-        return preferences[key]?.layerName
-    }
+
+    // ── Scroll / swipe mode ──────────────────────────────────────────────────
 
     fun setScrollMode(fileId: String, memberId: String, useScrollMode: Boolean) {
-        val preferences = getAnnotationLayerPreferences()
         val key = "${fileId}_${memberId}"
-
-        val existingPref = preferences[key]
-        val updatedPref = existingPref?.copy(useScrollMode = useScrollMode)
-            ?: AnnotationLayerPreferences(
-                fileId = fileId,
-                memberId = memberId,
-                useScrollMode = useScrollMode
-            )
-
-        preferences[key] = updatedPref
+        val preferences = getAnnotationLayerPreferences()
+        val pref = preferences[key] ?: AnnotationLayerPreferences(fileId, memberId)
+        preferences[key] = pref.copy(useScrollMode = useScrollMode)
         saveAnnotationLayerPreferences(preferences)
     }
 
     fun getScrollMode(fileId: String, memberId: String): Boolean {
         val preferences = getAnnotationLayerPreferences()
+        return preferences["${fileId}_${memberId}"]?.useScrollMode ?: false
+    }
+
+    // ── Legacy helpers (still used by MemberFileSection display name) ────────
+
+    fun setAnnotationLayerName(fileId: String, memberId: String, name: String?) {
         val key = "${fileId}_${memberId}"
-        return preferences[key]?.useScrollMode ?: false // Default to page/swipe mode
-    }
-
-    fun setSharedLayerVisible(fileId: String, viewerMemberId: String, visible: Boolean) {
         val preferences = getAnnotationLayerPreferences()
-        val key = "${fileId}_${viewerMemberId}"
-        val pref = preferences[key] ?: AnnotationLayerPreferences(fileId, viewerMemberId)
-        preferences[key] = pref.copy(showSharedLayer = visible)
+        val pref = preferences[key] ?: AnnotationLayerPreferences(fileId, memberId)
+        preferences[key] = pref.copy(layerName = name)
         saveAnnotationLayerPreferences(preferences)
     }
 
-    fun getSharedLayerVisible(fileId: String, viewerMemberId: String): Boolean {
+    fun getAnnotationLayerName(fileId: String, memberId: String): String? {
         val preferences = getAnnotationLayerPreferences()
-        return preferences["${fileId}_${viewerMemberId}"]?.showSharedLayer ?: true
+        return preferences["${fileId}_${memberId}"]?.layerName
     }
 
-    fun setActiveLayerIsShared(fileId: String, viewerMemberId: String, isShared: Boolean) {
-        val preferences = getAnnotationLayerPreferences()
-        val key = "${fileId}_${viewerMemberId}"
-        val pref = preferences[key] ?: AnnotationLayerPreferences(fileId, viewerMemberId)
-        preferences[key] = pref.copy(activeLayerIsShared = isShared)
-        saveAnnotationLayerPreferences(preferences)
-    }
-
-    fun getActiveLayerIsShared(fileId: String, viewerMemberId: String): Boolean {
-        val preferences = getAnnotationLayerPreferences()
-        return preferences["${fileId}_${viewerMemberId}"]?.activeLayerIsShared ?: false
-    }
-
-    // --- Drawing style (global, persisted across sessions) ---
+    // ── Drawing style (global) ───────────────────────────────────────────────
 
     fun saveDrawingStyle(colorArgb: Int, strokeWidth: Float, opacity: Float) {
         prefs.edit {
@@ -122,6 +90,8 @@ class AnnotationPreferencesManager(context: Context) {
     fun getDrawingStrokeWidth(): Float = prefs.getFloat("drawing_stroke_width", 5f)
     fun getDrawingOpacity(): Float = prefs.getFloat("drawing_opacity", 1f)
 
+    // ── Internal ─────────────────────────────────────────────────────────────
+
     private fun getAnnotationLayerPreferences(): MutableMap<String, AnnotationLayerPreferences> {
         val json = prefs.getString("layer_preferences", null) ?: return mutableMapOf()
         return try {
@@ -131,11 +101,9 @@ class AnnotationPreferencesManager(context: Context) {
             mutableMapOf()
         }
     }
-    
+
     private fun saveAnnotationLayerPreferences(preferences: Map<String, AnnotationLayerPreferences>) {
         val json = gson.toJson(preferences)
-        prefs.edit {
-            putString("layer_preferences", json)
-        }
+        prefs.edit { putString("layer_preferences", json) }
     }
 }

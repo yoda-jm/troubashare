@@ -17,10 +17,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.troubashare.data.preferences.AnnotationPreferencesManager
 import com.troubashare.di.RepositoryEntryPoint
+import com.troubashare.domain.model.AnnotationLayer
 import com.troubashare.domain.model.FileType
 import com.troubashare.domain.model.Member
-import com.troubashare.domain.model.SHARED_ANNOTATION_LAYER
 import com.troubashare.domain.model.SongFile
+import com.troubashare.ui.screens.file.LAYER_COLORS
+import com.troubashare.ui.screens.file.layerColor
 import dagger.hilt.android.EntryPointAccessors
 
 @Composable
@@ -221,30 +223,32 @@ private fun MemberFileSettingsDialog(
     var displayName by remember {
         mutableStateOf(preferencesManager.getAnnotationLayerName(file.id, memberId) ?: file.fileName)
     }
-    var showPersonalLayer by remember {
-        mutableStateOf(preferencesManager.getAnnotationLayerVisibility(file.id, memberId))
-    }
-    var showSharedLayer by remember {
-        mutableStateOf(preferencesManager.getSharedLayerVisible(file.id, memberId))
-    }
     var useScrollMode by remember {
         mutableStateOf(preferencesManager.getScrollMode(file.id, memberId))
     }
+    var hiddenLayerIds by remember {
+        mutableStateOf(preferencesManager.getHiddenLayerIds(file.id, memberId))
+    }
 
-    // Annotation stats
     val annotationRepository = remember {
         EntryPointAccessors
             .fromApplication(context.applicationContext, RepositoryEntryPoint::class.java)
             .annotationRepository()
     }
-    val personalAnnotations by annotationRepository
-        .getAnnotationsByFileAndMember(file.id, memberId)
+
+    // Observe layers live
+    val allLayers by annotationRepository
+        .getLayersForFile(file.id)
         .collectAsState(initial = emptyList())
-    val sharedAnnotations by annotationRepository
-        .getAnnotationsByFileAndMember(file.id, SHARED_ANNOTATION_LAYER)
-        .collectAsState(initial = emptyList())
-    val personalStrokes = personalAnnotations.sumOf { it.strokes.size }
-    val sharedStrokes = sharedAnnotations.sumOf { it.strokes.size }
+
+    // Only layers this member can see: their own + shared
+    val viewerLayers = allLayers.filter { it.ownerId == memberId || it.isShared }
+
+    // All annotations for visible layers in a single flow — then filter per layer in the UI
+    val viewerLayerIds = viewerLayers.map { it.id }
+    val allLayerAnnotations by remember(viewerLayerIds) {
+        annotationRepository.getAnnotationsByLayers(viewerLayerIds)
+    }.collectAsState(initial = emptyList())
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -265,61 +269,70 @@ private fun MemberFileSettingsDialog(
                     supportingText = { Text("Name shown in concert mode") }
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text("Personal layer", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Switch(
-                        checked = showPersonalLayer,
-                        onCheckedChange = {
-                            showPersonalLayer = it
-                            preferencesManager.setAnnotationLayerVisibility(file.id, memberId, it)
-                        },
-                        modifier = Modifier.scale(0.8f)
+                // Layer visibility toggles
+                if (viewerLayers.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text(
+                        "Layers",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                }
+                    viewerLayers.forEach { layer ->
+                        val isVisible = layer.id !in hiddenLayerIds
+                        val strokes = allLayerAnnotations.filter { it.layerId == layer.id }.sumOf { it.strokes.size }
+                        val layerColor = layerColor(
+                            layer,
+                            sharedColor = MaterialTheme.colorScheme.tertiary,
+                            personalColor = MaterialTheme.colorScheme.primary
+                        )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Group,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
-                        Text("Group layer (read-only)", style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = if (layer.isShared) Icons.Default.Group else Icons.Default.Person,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = layerColor
+                                )
+                                Column {
+                                    Text(
+                                        layer.name + if (layer.isShared) " (read-only)" else "",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    if (strokes > 0) {
+                                        Text(
+                                            "$strokes stroke${if (strokes != 1) "s" else ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                            Switch(
+                                checked = isVisible,
+                                onCheckedChange = { visible ->
+                                    hiddenLayerIds = if (visible) hiddenLayerIds - layer.id
+                                                    else hiddenLayerIds + layer.id
+                                    preferencesManager.setLayerHidden(
+                                        file.id, memberId, layer.id, !visible
+                                    )
+                                },
+                                modifier = Modifier.scale(0.8f)
+                            )
+                        }
                     }
-                    Switch(
-                        checked = showSharedLayer,
-                        onCheckedChange = {
-                            showSharedLayer = it
-                            preferencesManager.setSharedLayerVisible(file.id, memberId, it)
-                        },
-                        modifier = Modifier.scale(0.8f)
-                    )
                 }
 
                 if (file.fileType == FileType.PDF) {
+                    HorizontalDivider()
                     Text("View mode", style = MaterialTheme.typography.bodyMedium)
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(
@@ -338,48 +351,6 @@ private fun MemberFileSettingsDialog(
                             },
                             shape = SegmentedButtonDefaults.itemShape(1, 2)
                         ) { Text("Scroll") }
-                    }
-                }
-
-                // Annotation stats
-                if (personalStrokes > 0 || sharedStrokes > 0) {
-                    HorizontalDivider()
-                    Text(
-                        text = "Annotations",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    if (personalStrokes > 0) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "Personal layer",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "$personalStrokes stroke${if (personalStrokes != 1) "s" else ""}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                    if (sharedStrokes > 0) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "Shared (group) layer",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "$sharedStrokes stroke${if (sharedStrokes != 1) "s" else ""}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
                     }
                 }
             }

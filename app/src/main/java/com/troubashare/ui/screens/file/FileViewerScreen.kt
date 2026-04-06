@@ -261,12 +261,19 @@ private fun LayerManagementSheet(
                     modifier = Modifier.padding(16.dp)
                 )
             } else {
+                val allAnnotations by viewModel.annotations.collectAsState()
+                val strokesPerLayer = remember(allAnnotations) {
+                    allAnnotations.groupBy { it.layerId }
+                        .mapValues { (_, anns) -> anns.sumOf { it.strokes.size } }
+                }
+
                 LazyColumn {
                     items(layers, key = { it.id }) { layer ->
                         val isActive = layer.id == activeLayerId
                         val isVisible = layer.id !in hiddenLayerIds
                         val canEdit = viewModel.canEditLayer(layer.id)
                         val color = layerColor(layer, sharedColor, personalColor)
+                        val strokeCount = strokesPerLayer[layer.id] ?: 0
 
                         LayerRow(
                             layer = layer,
@@ -274,6 +281,7 @@ private fun LayerManagementSheet(
                             isVisible = isVisible,
                             canEdit = canEdit,
                             color = color,
+                            strokeCount = strokeCount,
                             onSelect = {
                                 viewModel.setActiveLayer(layer.id)
                                 dismissSheet()
@@ -344,14 +352,12 @@ private fun LayerRow(
     isVisible: Boolean,
     canEdit: Boolean,
     color: Color,
+    strokeCount: Int,
     onSelect: () -> Unit,
     onToggleVisible: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val sharedColor = MaterialTheme.colorScheme.tertiary
-    val personalColor = MaterialTheme.colorScheme.primary
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -378,21 +384,29 @@ private fun LayerRow(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Name + active chip — tapping selects as active layer (if writable)
+        // Name + stroke count + active chip — tapping selects as active layer (if writable)
         TextButton(
             onClick = onSelect,
             modifier = Modifier.weight(1f),
             enabled = canEdit
         ) {
-            Text(
-                text = layer.name,
-                style = if (isActive) MaterialTheme.typography.labelLarge
-                        else MaterialTheme.typography.bodyMedium,
-                color = if (isActive) color else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = layer.name,
+                    style = if (isActive) MaterialTheme.typography.labelLarge
+                            else MaterialTheme.typography.bodyMedium,
+                    color = if (isActive) color else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (strokeCount > 0) {
+                    Text(
+                        text = "$strokeCount stroke${if (strokeCount != 1) "s" else ""}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             if (isActive) {
                 Spacer(modifier = Modifier.width(4.dp))
                 Surface(

@@ -75,6 +75,23 @@ class FileViewerViewModel @Inject constructor(
     /** Snapshot of the current effective mode (used internally). */
     private val currentViewerMode: AppMode get() = viewerMode.value
 
+    /**
+     * The member identity to use for layer ownership and preferences.
+     *
+     * In PERFORMER/CONDUCTOR mode this is the session's chosen member, NOT the nav-arg
+     * memberId — because the nav arg can be any member's ID (e.g. the admin tapped on
+     * Bob's file row, but the current user is Alice in Performer mode).
+     *
+     * In ADMIN mode the nav arg identity is used (no personal context needed anyway).
+     */
+    private val effectiveViewerMemberId: String
+        get() = when (currentViewerMode) {
+            AppMode.PERFORMER, AppMode.CONDUCTOR ->
+                sessionManager.activeMemberId.value?.takeIf { it.isNotBlank() }
+                    ?: fileResolver.getEffectiveMemberId()
+            AppMode.ADMIN -> fileResolver.getEffectiveMemberId()
+        }
+
     private val _uiState = MutableStateFlow(FileViewerUiState())
     val uiState: StateFlow<FileViewerUiState> = _uiState.asStateFlow()
 
@@ -143,7 +160,7 @@ class FileViewerViewModel @Inject constructor(
 
     private fun loadLayersAndAnnotations() {
         val fid = fileResolver.getEffectiveFileId()
-        val mid = fileResolver.getEffectiveMemberId()
+        val mid = effectiveViewerMemberId
 
         // Restore hidden-layer prefs
         _hiddenLayerIds.value = preferencesManager.getHiddenLayerIds(fid, mid)
@@ -153,12 +170,14 @@ class FileViewerViewModel @Inject constructor(
             // flatMapLatest cancels the previous annotation Flow and starts a new one.
             annotationRepository.getLayersForFile(fid)
                 .flatMapLatest { allLayers ->
+                    // Re-read mid inside the lambda so mode changes are picked up
+                    val currentMid = effectiveViewerMemberId
                     // Filter to layers this viewer can see
                     val viewerLayers = allLayers.filter { layer ->
                         when (currentViewerMode) {
                             AppMode.ADMIN      -> layer.isShared || layer.isPromoted
                             AppMode.CONDUCTOR  -> true
-                            AppMode.PERFORMER  -> layer.ownerId == mid || layer.isShared || layer.isPromoted
+                            AppMode.PERFORMER  -> layer.ownerId == currentMid || layer.isShared || layer.isPromoted
                         }
                     }
                     _layers.value = viewerLayers
@@ -179,7 +198,7 @@ class FileViewerViewModel @Inject constructor(
      */
     private fun ensureValidActiveLayer(viewerLayers: List<AnnotationLayer>) {
         val fid = fileResolver.getEffectiveFileId()
-        val mid = fileResolver.getEffectiveMemberId()
+        val mid = effectiveViewerMemberId
         val storedId = preferencesManager.getActiveLayerId(fid, mid)
         val currentId = _activeLayerId.value
 
@@ -206,7 +225,7 @@ class FileViewerViewModel @Inject constructor(
         if (!canEditLayer(layerId)) return
         _activeLayerId.value = layerId
         preferencesManager.setActiveLayerId(
-            fileResolver.getEffectiveFileId(), fileResolver.getEffectiveMemberId(), layerId
+            fileResolver.getEffectiveFileId(), effectiveViewerMemberId, layerId
         )
     }
 
@@ -216,7 +235,7 @@ class FileViewerViewModel @Inject constructor(
         _hiddenLayerIds.value = if (nowHidden) hidden + layerId else hidden - layerId
         preferencesManager.setLayerHidden(
             fileResolver.getEffectiveFileId(),
-            fileResolver.getEffectiveMemberId(),
+            effectiveViewerMemberId,
             layerId,
             nowHidden
         )
@@ -227,7 +246,7 @@ class FileViewerViewModel @Inject constructor(
         val ownerId = when (currentViewerMode) {
             AppMode.ADMIN     -> SHARED_ANNOTATION_LAYER
             AppMode.PERFORMER,
-            AppMode.CONDUCTOR -> fileResolver.getEffectiveMemberId()
+            AppMode.CONDUCTOR -> effectiveViewerMemberId
         }
         val existingCount = _layers.value.count { it.ownerId == ownerId }
         viewModelScope.launch {
@@ -293,7 +312,7 @@ class FileViewerViewModel @Inject constructor(
     /** True if this viewer can rename/delete the given layer. */
     fun canEditLayer(layerId: String): Boolean {
         val layer = _layers.value.find { it.id == layerId } ?: return false
-        val mid = fileResolver.getEffectiveMemberId()
+        val mid = effectiveViewerMemberId
         return when (currentViewerMode) {
             AppMode.ADMIN     -> layer.isShared
             AppMode.PERFORMER,

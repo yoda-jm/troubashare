@@ -213,6 +213,8 @@ fun HomeScreen(
         ConcertModeSetupDialog(
             setlists = concertSetlists,
             members = concertMembers,
+            sessionMode = sessionMode,
+            preselectedMemberId = sessionMemberId,
             onSetlistAndMemberSelected = { setlistId, memberId ->
                 onNavigateToConcertMode(setlistId, memberId)
                 viewModel.hideConcertModeDialog()
@@ -513,11 +515,15 @@ fun EditGroupDialog(
 fun ConcertModeSetupDialog(
     setlists: List<com.troubashare.domain.model.Setlist>,
     members: List<com.troubashare.domain.model.Member>,
+    sessionMode: AppMode,
+    preselectedMemberId: String?,
     onSetlistAndMemberSelected: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedSetlistId by remember { mutableStateOf("") }
-    var selectedMemberId by remember { mutableStateOf("") }
+    // In PERFORMER/CONDUCTOR mode, lock the profile to the session member.
+    val memberLocked = sessionMode != AppMode.ADMIN && !preselectedMemberId.isNullOrBlank()
+    var selectedMemberId by remember { mutableStateOf(if (memberLocked) preselectedMemberId!! else "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -528,7 +534,7 @@ fun ConcertModeSetupDialog(
                     text = "Select a setlist and your member profile:",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-                
+
                 // Setlist selection
                 if (setlists.isNotEmpty()) {
                     Text(
@@ -536,7 +542,7 @@ fun ConcertModeSetupDialog(
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    
+
                     setlists.forEach { setlist ->
                         Row(
                             modifier = Modifier
@@ -547,7 +553,7 @@ fun ConcertModeSetupDialog(
                         ) {
                             RadioButton(
                                 selected = selectedSetlistId == setlist.id,
-                                onClick = null // Let the Row handle the click
+                                onClick = null
                             )
                             Text(
                                 text = setlist.name,
@@ -555,38 +561,60 @@ fun ConcertModeSetupDialog(
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
                 }
-                
+
                 // Member selection
                 if (members.isNotEmpty()) {
-                    Text(
-                        text = "Your Profile:",
-                        style = MaterialTheme.typography.labelMedium,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
+                    ) {
+                        Text(
+                            text = "Your Profile:",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        if (memberLocked) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Profile locked to session identity",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+
                     members.forEach { member ->
+                        val isSelected = selectedMemberId == member.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedMemberId = member.id }
+                                .let { mod ->
+                                    if (!memberLocked) mod.clickable { selectedMemberId = member.id }
+                                    else mod
+                                }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
-                                selected = selectedMemberId == member.id,
-                                onClick = null // Let the Row handle the click
+                                selected = isSelected,
+                                onClick = if (!memberLocked) { { selectedMemberId = member.id } } else null,
+                                enabled = !memberLocked || isSelected
                             )
                             Text(
                                 text = member.name,
-                                modifier = Modifier.padding(start = 8.dp)
+                                modifier = Modifier.padding(start = 8.dp),
+                                color = if (memberLocked && !isSelected)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                else
+                                    MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
                 }
-                
+
                 if (setlists.isEmpty() && members.isEmpty()) {
                     Text(
                         text = "No setlists or members found. Create a setlist and add members first.",

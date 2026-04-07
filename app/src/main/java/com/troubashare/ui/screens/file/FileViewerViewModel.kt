@@ -87,8 +87,12 @@ class FileViewerViewModel @Inject constructor(
     private val effectiveViewerMemberId: String
         get() = when (currentViewerMode) {
             AppMode.PERFORMER, AppMode.CONDUCTOR ->
-                sessionManager.activeMemberId.value?.takeIf { it.isNotBlank() }
-                    ?: fileResolver.getEffectiveMemberId()
+                // Use the session identity — deliberately do NOT fall back to the nav-arg
+                // memberId, which is whoever's file row was tapped (could be anyone).
+                // If no session member is set, return "" so the layer filter shows
+                // only shared/promoted layers rather than accidentally leaking another
+                // member's personal layers.
+                sessionManager.activeMemberId.value?.takeIf { it.isNotBlank() } ?: ""
             AppMode.ADMIN -> fileResolver.getEffectiveMemberId()
         }
 
@@ -213,8 +217,15 @@ class FileViewerViewModel @Inject constructor(
             ?: viewerLayers.find { it.id == storedId && isWritable(it) }
             ?: viewerLayers.firstOrNull { isWritable(it) }
 
-        if (best != null && _activeLayerId.value != best.id) {
-            _activeLayerId.value = best.id
+        if (best != null) {
+            if (_activeLayerId.value != best.id) {
+                _activeLayerId.value = best.id
+            }
+        } else {
+            // No writable layer — clear active layer so we don't accidentally
+            // write to a layer the current viewer cannot edit (e.g. shared layer
+            // was active from a previous ADMIN session).
+            _activeLayerId.value = null
         }
     }
 
@@ -387,6 +398,7 @@ class FileViewerViewModel @Inject constructor(
 
                 val activeLayerVal = _layers.value.find { it.id == _activeLayerId.value }
                     ?: return@launch  // no active layer yet (layers still loading)
+                if (!canEditLayer(activeLayerVal.id)) return@launch  // ownership guard
 
                 val currentPageValue = _currentPage.value
                 var annotation = _annotations.value.find {
@@ -426,6 +438,7 @@ class FileViewerViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isLoading = true)
                 val activeLayerVal = _layers.value.find { it.id == _activeLayerId.value }
                     ?: return@launch
+                if (!canEditLayer(activeLayerVal.id)) return@launch  // ownership guard
                 val currentPageValue = _currentPage.value
                 _annotations.value = _annotations.value.filter {
                     !(it.pageNumber == currentPageValue && it.layerId == activeLayerVal.id)
@@ -444,13 +457,16 @@ class FileViewerViewModel @Inject constructor(
     }
 
     fun deleteStroke(stroke: AnnotationStroke) {
+        val annotation = _annotations.value.find { ann -> ann.strokes.any { it.id == stroke.id } }
+            ?: return
+        if (!canEditLayer(annotation.layerId)) return  // ownership guard
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true)
-                _annotations.value = _annotations.value.map { annotation ->
-                    if (annotation.strokes.any { it.id == stroke.id }) {
-                        annotation.copy(strokes = annotation.strokes.filter { it.id != stroke.id })
-                    } else annotation
+                _annotations.value = _annotations.value.map { ann ->
+                    if (ann.id == annotation.id) {
+                        ann.copy(strokes = ann.strokes.filter { it.id != stroke.id })
+                    } else ann
                 }
                 saveManager.markDirty()
             } catch (e: Exception) {
@@ -464,6 +480,7 @@ class FileViewerViewModel @Inject constructor(
     fun updateStroke(oldStroke: AnnotationStroke, newStroke: AnnotationStroke) {
         val annotation = _annotations.value.find { ann -> ann.strokes.any { it.id == oldStroke.id } }
             ?: return
+        if (!canEditLayer(annotation.layerId)) return  // ownership guard
         _annotations.value = _annotations.value.map { ann ->
             if (ann.id == annotation.id) {
                 ann.copy(strokes = ann.strokes.map { if (it.id == oldStroke.id) newStroke else it })
